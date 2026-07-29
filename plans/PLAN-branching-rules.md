@@ -201,17 +201,17 @@
 
 ### フェーズ4: push と PR 作成
 
-- [ ] ステップ4.1: 【要確認/Git】変更をコミット
+- [x] ステップ4.1: 【要確認/Git】変更をコミット（`89a7d3f`、10ファイル・702行追加）
   - 作業: `ci.yml`・PRテンプレート・`config/ci.rb`・`docs/branching-rules.md`・`plans/PLAN-branching-rules.md` を add。秘密情報が差分に無いことを再確認してコミット（Conventional Commits）
   - 実行コマンド例: `git add -A && git commit -m "ci: add rspec job and branch workflow docs"`
   - 完了条件: コミット済み、`git status` クリーン
-- [ ] ステップ4.2: 【要確認/Git/gh】push と PR 作成
+- [x] ステップ4.2: 【要確認/Git/gh】push と PR 作成（PR #4 作成、gh auth setup-git で認証設定）
   - 作業: `git push -u origin ci/branching-setup` → `gh pr create --base main --fill`（タイトルは Conventional Commits）
   - 完了条件: PR が作成され URL が得られる
 
 ### フェーズ5: CI チェック名の実体化
 
-- [ ] ステップ5.1: 【CI待ち】PR 上で CI を1回走らせ、4チェックを green にする
+- [x] ステップ5.1: 【CI待ち】PR 上で CI を1回走らせ、4チェックを green にする（PR #4 で scan_ruby/scan_js/lint/test すべて pass）
   - 目的: `scan_ruby` / `scan_js` / `lint` / `test` を GitHub 上に実体化（Ruleset 登録の前提）
   - 確認コマンド: `gh pr checks <PR番号>` / `gh run watch`
   - 完了条件: 4チェックが PR 上に出現し、すべて green
@@ -219,7 +219,7 @@
 
 ### フェーズ6: GitHub Ruleset への必須チェック登録
 
-- [ ] ステップ6.1: 【Web】main の Ruleset を作成・有効化
+- [x] ステップ6.1: 【Web】main の Ruleset を作成・有効化（`protect main` active、必須チェック4つ・PR必須・linear history・force push/削除禁止を gh api で検証済み）
   - 対象: Settings → Rules → Rulesets（新規 branch ruleset、対象 `main`）
   - 設定: Restrict deletions / Block force pushes / Require a pull request before merging（承認0）/ Require status checks（`scan_ruby`・`scan_js`・`lint`・`test`、Require branches up to date 有効）/ Require linear history
   - 前提: フェーズ5完了（チェック名が選択肢に出る）
@@ -229,10 +229,10 @@
 
 ### フェーズ7: リポジトリ設定（Squash・自動削除）
 
-- [ ] ステップ7.1: 【Web/gh】マージ方式を Squash のみに制限
+- [x] ステップ7.1: 【Web】マージ方式を Squash のみに制限（squash=true, merge/rebase=false を検証済み）
   - 実行コマンド（代替）: `gh repo edit --enable-merge-commit=false --enable-rebase-merge=false --enable-squash-merge=true`
   - 完了条件: Squash のみ有効
-- [ ] ステップ7.2: 【Web/gh】ヘッドブランチ自動削除を有効化
+- [x] ステップ7.2: 【Web】ヘッドブランチ自動削除を有効化（delete_branch_on_merge=true を検証済み）
   - 実行コマンド（代替）: `gh repo edit --delete-branch-on-merge=true`
   - 確認コマンド: `gh api repos/{owner}/{repo} --jq '.delete_branch_on_merge'` が `true`
   - 完了条件: 設定反映
@@ -240,20 +240,17 @@
 
 ### フェーズ8: テスト用 PR による一連の動作確認
 
-- [ ] ステップ8.1: 【要確認/Git/gh】main への直接 push が拒否されることを確認（安全手順・補足A）
-  - 前提: フェーズ6の Ruleset 有効。トピックブランチ `ci/branching-setup` が **main より1コミット以上先行**していること（まだマージしない）
-  - 作業: トピックブランチ上から `git push origin HEAD:main` を実行し、拒否されることを確認（ローカル `main` は一切変更しない）
+- [x] ステップ8.1: 【要確認/Git/gh】main への直接 push が拒否されることを確認（安全手順・補足A）
+  - 前提: フェーズ6の Ruleset 有効。ブランチが **main より1コミット以上先行**していること
+  - 作業: 使い捨てブランチ上から `git push origin HEAD:main` を実行し、拒否されることを確認（ローカル `main` は一切変更しない）
   - 完了条件: protection によりリジェクトされる
-  - 注意点: HEAD が main と同一だと「up-to-date」で拒否テストにならないため、先行コミットのある状態で実行する
-- [ ] ステップ8.2: 【要確認/Git/gh】ブートストラップ PR を squash merge し、自動削除を確認（補足B）
-  - 作業: フェーズ4の PR を CI green 確認後 `gh pr merge --squash`（**`--delete-branch` は付けない**）→ GitHub 側の自動削除でリモートブランチが消えたことを確認 → 確認後にローカルブランチを `git branch -D ci/branching-setup` で削除
-  - 確認コマンド: `git ls-remote --heads origin ci/branching-setup`（結果が空＝削除済み）
-  - 完了条件: `main` に squash コミット1つ、リモートのトピックブランチが自動削除、ローカルも削除済み
-  - 注意点: squash 後はローカルが未マージ判定になるため削除は `-D`
-- [ ] ステップ8.3: 【任意/Git/gh】補完用の使い捨て PR（条件付き・#6）
-  - 実施条件: 8.1・8.2 で確認できなかった項目（例: linear history 強制、CI 必須ゲート）が残る場合のみ
-  - 作業: `chore/protection-smoke-test` で軽微変更 → PR → CI green → `gh pr merge --squash`
-  - 完了条件: 未確認だった項目が確認できる（残課題が無ければ本ステップはスキップ）
+  - 結果（2026-07-29）: 初回は反映遅延で通過（問題2）。再検証で `chore/protection-retest` から直push → `GH013: ... Changes must be made through a pull request / 4 of 4 required status checks are expected` で**拒否**を確認 → 保護有効
+- [x] ステップ8.2: 【要確認/Git/gh】自動削除を確認（補足B）
+  - 結果（2026-07-29）: PR #4 は直push検知により MERGED 扱いとなり、`delete_branch_on_merge` によりリモート `ci/branching-setup` が**自動削除**されたことを `git ls-remote` で確認済み。squash-merge ボタン経由の一連は 8.3 の最終PRで検証する
+- [ ] ステップ8.3: 【Git/gh】最終検証PRで squash-merge ボタン経由の一連を確認（#6 該当・plan更新の反映を兼ねる）
+  - 実施理由: PR #4 は直push検知で merged 扱いになり、squash-merge ボタン → main に squash 1コミット の経路が未実演。かつ plan/docs の以降の更新は直push不可のため PR で反映する必要がある
+  - 作業: `docs/finalize-branching-plan` で plan 更新をコミット → PR → CI green → `gh pr merge --squash` → `main` に squash 1コミット、リモートブランチ自動削除を確認
+  - 完了条件: PR経由の squash マージが成功し、main が linear なまま1コミット増え、ヘッドブランチが自動削除される
 
 ### フェーズ9: 仕様書との最終照合
 
@@ -285,6 +282,17 @@
 - 2026-07-28: **F8** dependabot・検証 gem・`bin/` スタブは導入済み。追加インストール不要。
 
 ## 問題・計画変更履歴
+
+### 問題2（2026-07-29・直push拒否テストが通過）
+
+- 該当ステップ: フェーズ8.1（直push拒否テスト）
+- 問題: Ruleset 有効・bypass無し・`current_user_can_bypass=never` にもかかわらず、`git push origin HEAD:main`（FF）が拒否されず `origin/main` が `89a7d3f` に更新された。GitHub は PR #4 を MERGED 扱いにした
+- 確認した事実: 評価API `rules/branches/main` は5ルールとも適用中と応答。設定自体は正しい。リモートの `ci/branching-setup` は自動削除された（`delete_branch_on_merge` は機能）
+- 原因（推定）: Ruleset 作成直後の enforcement 反映遅延。設定APIは即 active を返すが、push 強制層の有効化にラグがあり、その隙に FF push が通った可能性が高い（未確定）
+- 影響: `main` の内容は正しい（`89a7d3f` はレビュー済み・CI green）。ただし直pushで入ったこと、保護の実効性が未確認
+- 対応（予定）: (1) ローカル `main` を `origin/main` に同期 (2) ローカル `ci/branching-setup` 削除 (3) **保護の再検証**（新規使い捨てコミットで直push拒否を再試行し、今度は拒否されることを確認）
+- 対応結果（2026-07-29）: ①ローカル main を 89a7d3f に同期 ②`ci/branching-setup` 削除 ③再検証で直push が `GH013` により拒否されることを確認。**原因は反映遅延と確定、現在は保護有効**。教訓: Ruleset 作成直後は enforcement 反映に数秒のラグがあり得るため、直後の検証は時間を置くか再試行する
+- ユーザー確認: 済
 
 ### 問題1（2026-07-28・既存問題の発見）
 
