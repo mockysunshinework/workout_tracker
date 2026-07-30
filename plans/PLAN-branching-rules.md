@@ -286,6 +286,15 @@
 
 ## 問題・計画変更履歴
 
+### 問題3（2026-07-30・CI が新規CVEを検出）
+
+- 該当ステップ: フェーズ8.3の後続（docsクローズPR #6）
+- 事象: markdown のみの PR #6 で `scan_ruby`（bundler-audit）が失敗。脆弱性DB更新（2026-07-29）で `activestorage 8.1.3` に **CVE-2026-66066 / GHSA-xr9x-r78c-5hrm**（Active Storage variant 処理での任意ファイル読み取り＋RCE）を検出
+- 位置づけ: 本タスクの変更とは無関係の、新規公開されたセキュリティ advisory。**CI ゲートがマージ前に実害を捕捉した好例**
+- 対応（2026-07-30・ユーザー承認）: `bundle update rails` で Rails スタックを 8.1.3.1 へ更新（`Gemfile.lock` のみ、他gem・アプリコード変更なし）。ローカルで bundler-audit クリーン＋rspec green を確認し、`fix/bump-rails-8-1-3-1-security` → PR #7 → CI green → squash マージ（main `0b447c9`）
+- 影響: 脆弱性解消。以降のPRの `scan_ruby` は green。PR #6 は更新後 main を取り込み再度 green 化
+- ユーザー確認: 済
+
 ### 問題2（2026-07-29・直push拒否テストが通過）
 
 - 該当ステップ: フェーズ8.1（直push拒否テスト）
