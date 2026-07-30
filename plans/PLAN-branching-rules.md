@@ -247,28 +247,31 @@
   - 結果（2026-07-29）: 初回は反映遅延で通過（問題2）。再検証で `chore/protection-retest` から直push → `GH013: ... Changes must be made through a pull request / 4 of 4 required status checks are expected` で**拒否**を確認 → 保護有効
 - [x] ステップ8.2: 【要確認/Git/gh】自動削除を確認（補足B）
   - 結果（2026-07-29）: PR #4 は直push検知により MERGED 扱いとなり、`delete_branch_on_merge` によりリモート `ci/branching-setup` が**自動削除**されたことを `git ls-remote` で確認済み。squash-merge ボタン経由の一連は 8.3 の最終PRで検証する
-- [ ] ステップ8.3: 【Git/gh】最終検証PRで squash-merge ボタン経由の一連を確認（#6 該当・plan更新の反映を兼ねる）
+- [x] ステップ8.3: 【Git/gh】最終検証PRで squash-merge ボタン経由の一連を確認（#6 該当・plan更新の反映を兼ねる）
   - 実施理由: PR #4 は直push検知で merged 扱いになり、squash-merge ボタン → main に squash 1コミット の経路が未実演。かつ plan/docs の以降の更新は直push不可のため PR で反映する必要がある
   - 作業: `docs/finalize-branching-plan` で plan 更新をコミット → PR → CI green → `gh pr merge --squash` → `main` に squash 1コミット、リモートブランチ自動削除を確認
   - 完了条件: PR経由の squash マージが成功し、main が linear なまま1コミット増え、ヘッドブランチが自動削除される
+  - 結果（2026-07-29）: PR #5 で 4チェック green → `gh pr merge --squash` → `main` に `6940766 docs: ... (#5)` が linear に追加、リモート `docs/finalize-branching-plan` 自動削除を確認
 
 ### フェーズ9: 仕様書との最終照合
 
 - [ ] ステップ9.1: 【調査】`docs/branching-rules.md` と実設定を照合（2章/5章/6章/8章/11章）
   - 完了条件: 各規則と実設定・実CIが一致
-- [ ] ステップ9.2: 【ローカル】不一致があれば仕様書または設定を修正し変更履歴に記録
+  - 結果（2026-07-30）: 5章/6章/8章すべて `gh api` で一致確認（deletion/non_fast_forward/linear/pull_request(承認0)/status checks 4つ strict、squash限定・自動削除、test ジョブ green）
+- [x] ステップ9.2: 【ローカル】不一致があれば仕様書または設定を修正し変更履歴に記録
   - 完了条件: 乖離ゼロ、または残差が明記
-- [ ] ステップ9.3: 【要確認】ユーザーへ最終報告と確認
+  - 結果（2026-07-30）: 乖離なし（付録A の DB env は 2.4 で整合済み）
+- [x] ステップ9.3: 【要確認】ユーザーへ最終報告と確認（本セッションで報告）
 
 ## 完了条件
 
-- [ ] `origin`（Public）が存在し `main` が push 済み
-- [ ] CI に `test`（RSpec）ジョブがあり PR で green になる
-- [ ] `main` の Ruleset（直push禁止・PR必須・status checks 4つ・linear history・force-push/削除禁止）が有効
-- [ ] Squash のみ許可・ヘッドブランチ自動削除が有効
-- [ ] テスト用 PR で一連のフローが確認済み
-- [ ] `docs/branching-rules.md` と実設定が一致
-- [ ] 未確認・未解決事項が記録されている
+- [x] `origin`（Public）が存在し `main` が push 済み
+- [x] CI に `test`（RSpec）ジョブがあり PR で green になる
+- [x] `main` の Ruleset（直push禁止・PR必須・status checks 4つ・linear history・force-push/削除禁止）が有効
+- [x] Squash のみ許可・ヘッドブランチ自動削除が有効
+- [x] テスト用 PR で一連のフローが確認済み（PR #5 で PR→CI→squash→自動削除を実演）
+- [x] `docs/branching-rules.md` と実設定が一致
+- [x] 未確認・未解決事項が記録されている
 
 ## 結果・発見事項
 
@@ -328,6 +331,7 @@
 
 ## 次のステップ
 
-- 調査・計画作成・計画改訂（改訂1）は完了
-- 実装は未着手（ソースコード・CI・Git設定・GitHub設定の変更、ブランチ作成、コミット、push、PR、マージはいずれも未実施）
-- 承認済みのため、フェーズ1から着手する。ただし Git 操作（repo作成/push/コミット/PR/マージ）は各操作の直前に報告し、明示依頼時のみ実行する
+- 全フェーズ（0〜9）完了。ブランチ運用ルールは実運用へ適用・検証済み
+- `main` は Ruleset で保護され、直push拒否・PR必須・CI4チェック必須・squash限定・自動削除・linear history が有効
+- この計画ファイル自体の最終クローズ更新は、本ローカル編集分（8.3/9/完了条件のチェック）が未コミット。反映する場合は最終 PR で main へ landing する（直push は保護により不可）
+- 残タスク（本タスク外）: dependabot PR #1〜#3 の対応（仕様書9章の手順で CI green＋`bundle check` 確認後に squash マージ）
