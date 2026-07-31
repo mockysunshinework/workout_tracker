@@ -29,7 +29,7 @@
 - [x] 2.1 Devise の導入
   - 実施内容: Gemfile に `devise` を追加し、`rails g devise:install` を実行、初期設定（default_url_options 等）を行う
   - 完了条件: Devise のインストールがエラーなく完了し、アプリが起動する
-- [ ] 2.2a users テーブルの作成（DB）
+- [x] 2.2a users テーブルの作成（DB）
   - 実施内容: `rails g devise User` をベースに `name`（NOT NULL）カラムを追加したマイグレーションを作成・実行する。使用モジュールは仕様書 4.1.1（database_authenticatable / registerable / recoverable / rememberable / validatable）。LINE 系カラムは 8.1 で追加するため含めない
   - 対象: `users` テーブル
   - 完了条件: マイグレーションが成功し、schema に email 一意 index と name NOT NULL が反映されている
