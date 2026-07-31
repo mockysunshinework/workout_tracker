@@ -1,0 +1,4 @@
+<%# Minimal landing for 2.3; the real dashboard (charts/summary) is implemented in 6.3 %>
+<h1>ダッシュボード（仮）</h1>
+<p><%= current_user.email %> でログイン中です。</p>
+<%= button_to "ログアウト", destroy_user_session_path, method: :delete %>
