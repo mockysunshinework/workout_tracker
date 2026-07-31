@@ -11,5 +11,6 @@ Rails.application.routes.draw do
   # get "service-worker" => "rails/pwa#service_worker", as: :pwa_service_worker
 
   # Defines the root path route ("/")
-  # root "posts#index"
+  # NOTE: minimal landing for 2.3; replaced by the real dashboard in 6.3
+  root "home#index"
 end

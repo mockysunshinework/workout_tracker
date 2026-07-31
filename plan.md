@@ -37,10 +37,11 @@
   - 実施内容: name のバリデーションと factory を実装する
   - 対象: `app/models/user.rb` / テスト種別: model spec
   - 完了条件: model spec（name 必須・email 一意）が通る
-- [ ] 2.3 会員登録・ログイン画面の動作確認
+- [x] 2.3 会員登録・ログイン画面の動作確認
   - 実施内容: Devise 標準画面（`/users/sign_up` `/users/sign_in`）で登録・ログイン・ログアウトを確認し、request spec を作成する
   - 対象画面: 仕様書 4.4 画面 1 / テスト種別: request spec
   - 完了条件: ブラウザで登録〜ログインが成立し、request spec が通る
+  - 決定（2026-07-31・ユーザー承認）: ログイン後の着地先として **最小 `home#index`（`root "home#index"`／`authenticate_user!`）を暫定設置**。本ダッシュボード（グラフ・サマリ）は **6.3 で置き換える**。合わせて sign_up に `name` 欄追加＋ApplicationController で `:sign_up` の `name` を permit、layout に flash を追加（2.1 保留分）
 - [ ] 2.4 開発用メール送信の設定
   - 実施内容: パスワードリセットメールを開発環境で確認できるよう letter_opener 等を設定する（本番メールは仕様書 10 章 #8 のとおり対象外）
   - 完了条件: 開発環境でリセットメールの内容を確認できる

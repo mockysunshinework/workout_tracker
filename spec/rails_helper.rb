@@ -38,6 +38,9 @@ RSpec.configure do |config|
   # Use FactoryBot methods (create/build/build_stubbed) without the FactoryBot prefix
   config.include FactoryBot::Syntax::Methods
 
+  # Devise helpers (e.g. sign_in) in request specs
+  config.include Devise::Test::IntegrationHelpers, type: :request
+
   # Remove this line if you're not using ActiveRecord or ActiveRecord fixtures
   config.fixture_paths = [
     Rails.root.join('spec/fixtures')
