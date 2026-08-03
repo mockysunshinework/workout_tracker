@@ -167,9 +167,9 @@
 
 ### フェーズ1: 基盤ドキュメントの PR 化
 
-- [ ] ステップ1.1: 【要確認/Git】push 前の秘密情報混入確認（`git diff main...HEAD` で認証情報が含まれないことを確認）
-- [ ] ステップ1.2: 【要確認/Git/gh】ブランチ `docs/pr-review-automation` を push する
-- [ ] ステップ1.3: 【Git/gh】PR を作成する（タイトルは Conventional Commits 形式）
+- [x] ステップ1.1: 【要確認/Git】push 前の秘密情報混入確認（差分3ファイル・1,131行をパターン検査。検出ゼロ。`CLAUDE_CODE_OAUTH_TOKEN` の出現11箇所は全て Secret 名の言及か `${{ secrets.* }}` 参照）
+- [x] ステップ1.2: 【要確認/Git/gh】ブランチ `docs/pr-review-automation` を push する（リモートに `docs/SPEC.md` が存在しないことを確認済み）
+- [x] ステップ1.3: 【Git/gh】PR を作成する（**PR #12**。事前に RuboCop 32ファイル no offenses / RSpec 11 examples 0 failures を確認）
 - [ ] ステップ1.4: 【CI待ち】CI 4ジョブが green になるのを確認する
 - [ ] ステップ1.5: 【要確認/Git/gh】squash マージする
 - [ ] ステップ1.6: 【Git/gh】ローカルの `main` を最新化する
