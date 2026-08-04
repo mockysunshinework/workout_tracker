@@ -176,11 +176,12 @@
 
 ### フェーズ2: 認証とアプリの準備
 
-- [ ] ステップ2.1: 【ローカル】`claude setup-token` を実行し OAuth トークンを発行する
-- [ ] ステップ2.2: 【Web】Settings → Secrets and variables → Actions に `CLAUDE_CODE_OAUTH_TOKEN` を登録する
-- [ ] ステップ2.3: 【Git/gh】`gh secret list` で登録を確認し、作業ツリーにトークンが残っていないことを確認する
-- [ ] ステップ2.4: 【Web】Claude GitHub App（https://github.com/apps/claude ）を `workout_tracker` にインストールする。対象は当該リポジトリのみ
-- [ ] ステップ2.5: 【調査】App の権限が Contents / Issues / Pull requests の Read & Write であることを確認する
+- [x] ステップ2.1: 【ローカル】`claude setup-token` を実行し OAuth トークンを発行する
+- [x] ステップ2.2: 【Web】Settings → Secrets and variables → Actions に `CLAUDE_CODE_OAUTH_TOKEN` を登録する
+- [x] ステップ2.3: 【Git/gh】`gh secret list` で登録を確認（`CLAUDE_CODE_OAUTH_TOKEN` / 2026-08-04T06:39:50Z）。作業ツリーにトークンの残存なし
+- [x] ステップ2.4: 【Web】Claude GitHub App（https://github.com/apps/claude ）を `workout_tracker` にインストールする。対象は当該リポジトリのみ
+- [x] ステップ2.5: 【調査】App の権限を確認。**公式ドキュメントの記載（Contents / Issues / Pull requests）より広く**、actions / checks / code / discussions / issues / pull requests / repository hooks / workflows の read & write ＋ commit statuses・metadata の read だった。ワークフローの `permissions:` ではこのトークンを絞れないため、**`mention` ジョブに `--allowedTools` を追加して対処**（仕様書 9章・6.3）
+  - API での再確認は不可（ユーザートークンでは App インストール一覧を参照できず 403）。初回実行時に実質的に確認される
 
 ### フェーズ3: ワークフローの作成
 
@@ -295,6 +296,7 @@
 - 2026-08-03: プラグインの除外リストに `lack of test coverage` が明記されており、テストの欠落は既定では指摘されない。`CLAUDE.md` に明示的な規約を書くことで初めて検出対象になる。
 - 2026-08-03: `CLAUDE.md` 草案に技術スタックの誤記があった（`solid_queue` 等を採用と記載）。実際は `rails new` の既定生成物で未設定・未使用であり、仕様書 2.1 では Stage 2 から Sidekiq ＋ Redis を採用、Solid Queue は不採用。誤った規約はレビューの誤検知を誘発するため修正済み。
 - 2026-08-03: **詳細仕様書のリポジトリ内取り込みを一度実施したが撤回した。** プラグインのコマンド定義を全件精査した結果、参照ファイルとして言及されるのは `CLAUDE.md` のみで（L24〜26 でルートおよび変更ファイルと同階層の `CLAUDE.md` を収集）、他のドキュメントは1箇所も登場しない。バグ検出エージェントには「差分そのものに集中し、追加の文脈を読むな」と明示指示がある（L36）。したがって**仕様書をリポジトリに置いてもレビュー内容は変わらず**、Public リポジトリへの公開という代償だけが残る。仕様準拠をレビューさせたい場合は、仕様書を置くのではなく**不変条件を規則の形に翻訳して `CLAUDE.md` に書く**必要がある。この作業は LINE Webhook 実装（`plan.md` 7章）着手時に行う。
+- 2026-08-04: **Claude GitHub App のトークンは、ワークフローの `permissions:` ブロックでは絞られない。** `permissions:` が制御するのは自動生成の `GITHUB_TOKEN` のみで、App が発行するトークンは App のインストール権限をそのまま持つ（公式 `docs/security.md`）。実際の要求権限は公式ドキュメントの記載（Contents / Issues / Pull requests）より広く、**repository hooks と workflows への write を含む**。実効的な防御はツール制限であり、`auto-review` はプラグインの `allowed-tools`（`gh api` を含まない）、`mention` はワークフロー側の `--allowedTools` で塞ぐ。権限そのものを絞りたい場合は自作 GitHub App を使う。
 - 2026-08-03: リポジトリを Private 化する案は採らない。無料の個人アカウントでは Private リポジトリで Ruleset も branch protection も使えず、`main` の直 push 禁止（`docs/branching-rules.md` の根幹）が失われる。維持するには GitHub Pro が必要で、Actions の実行時間も従量制になる。
 
 ## 問題・計画変更履歴

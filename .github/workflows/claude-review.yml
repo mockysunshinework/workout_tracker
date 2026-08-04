@@ -83,6 +83,10 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # auto-review と違いプラグインを通さないため、ツールをここで明示的に制限する。
+          # Claude App のトークンは workflows / repository hooks への write を含むが、
+          # gh api を許可しないことで実行経路を塞ぐ（9章参照）
           claude_args: |
             --max-turns 20
+            --allowedTools "Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Bash(git log:*),Bash(git diff:*),mcp__github_inline_comment__create_inline_comment"
             --append-system-prompt "回答は日本語で行う。ファイル名・識別子・コード片は原文のまま引用する。コードの変更は行わず、方針の説明と該当箇所の提示に留める。"
