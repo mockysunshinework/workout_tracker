@@ -4,7 +4,7 @@
 
 - 対象リポジトリ: `workout_tracker`（Public / ソロ開発）
 - 目的: 現場デファクトの「ブランチ → PR → CI green → main マージ」の型で開発する
-- 版: 1.3（2026-07-28 策定）
+- 版: 1.4（2026-08-04 改訂。初版 2026-07-28）
 
 ---
 
@@ -157,6 +157,10 @@ gh pr create --fill --base main
 
 # 6. CI が green になるのを待つ
 
+# 6b. Claude の自動レビュー結果を読み、対応要否を判断する
+#     指摘は確信度 80 以上に絞られているが、採否は必ず自分で判断する
+#     修正後に再レビューが必要なら PR に「@claude もう一度レビューして」とコメント
+
 # 7. Squash merge（CI green 後）
 gh pr merge --squash --delete-branch
 
@@ -171,6 +175,10 @@ git pull origin main
 - 説明: 変更概要・確認したこと（テスト結果等）を簡潔に。テンプレは任意（→ 付録B）。
 - **マージ前に自分で Files changed を必ず一読する**（ソロでもレビュー習慣をつける）。
 - CI が落ちたら修正コミットを push し、green を待ってからマージ。
+- Claude の自動レビュー結果を確認したうえでマージする。**AI の指摘は一次チェックであり、採否は必ず自分で判断する**。指摘が誤っている場合はその旨を PR に記録し、鵜呑みにしない（→ `docs/pr-review-automation.md`）。
+- **「No issues found」で終わった場合も、差分の自己確認は省略しない。** レビューは追加の層であり、自分で読むことの置き換えではない。
+- 自動レビューが失敗した場合（認証エラー・タイムアウト等）は、PR に `@claude review` とコメントして再実行するか、ローカルで `/code-review` を実行して代替する。
+- 自動レビューは PR 作成時に1回だけ走る（`synchronize` は使わない）。修正後の再レビューは `@claude` メンションで明示的に依頼する。
 
 ### 7.3 エスケープハッチ
 
@@ -195,6 +203,7 @@ git pull origin main
 - `dependabot.yml` により bundler / github-actions の更新 PR が weekly で作成される。
 - これらも通常 PR と同じく **CI green を確認してから squash merge** する。
 - 破壊的な更新やロックファイル大量変更は、ローカルでテストを回してからマージする。
+- **dependabot の PR には自動レビューは走らない。** dependabot が起動した `pull_request` イベントには Actions Secret が渡らず、必ず認証エラーになるため、ワークフロー側で明示的に除外している。従来どおりローカルでのテストと `bundler-audit` / `bundle check` で確認する（→ `docs/pr-review-automation.md` 6.5）。
 
 ---
 
@@ -216,6 +225,7 @@ git pull origin main
 - **本ルール（branch）**: 変更を「どう束ね、どう `main` に入れるか」（ブランチ・PR・CI・マージ）
 - **`tdd-dev`**: 1つの作業項目を「どう実装するか」（RED → GREEN → REFACTOR、品質・セキュリティチェック）
 - **`plan-checklist`**: 計画ファイルの作成と記録形式（チェックボックス・検証記録・問題履歴）
+- **`docs/pr-review-automation.md`**: PR に自動レビューを走らせる基盤（GitHub Actions ＋ Claude Code の公式 `code-review` プラグイン）。本ルールの「PR ＝ CI ゲート＋自分で差分を読む場」という位置づけに、機械的なレビュー層を1つ足すもの。レビューが参照する規約はリポジトリ直下の `CLAUDE.md` に置く
 
 ### 11.1 ブランチの粒度 ＝ plan.md の項目単位
 
@@ -312,6 +322,7 @@ git pull origin main
 
 ## 変更履歴
 
+- 1.4（2026-08-04）: PR 自動レビューの導入に伴い、7.1 に確認工程（6b）、7.2 に運用ルール4項目、9章に dependabot PR が自動レビュー対象外である旨、11章に `docs/pr-review-automation.md` への参照を追加。
 - 1.3（2026-07-28）: 付録A の CI テストジョブ例を実環境に整合（`DATABASE_URL: postgres://postgres:postgres` を廃し、`POSTGRES_USER=workout_tracker`／`DB_USERNAME`・`DB_PASSWORD` を実 `database.yml`・`compose.yaml` に合わせた）。実 `ci.yml` の `test` ジョブと一致。
 - 1.2（2026-07-28）: 2章のブランチ粒度規則を `plan.md` 起点に変更（「1トピックブランチ ＝ `plan.md` の1項目、または小さな関連項目の集合」）。巨大ブランチ抑止のため。11.1 も同基準に整合。
 - 1.1（2026-07-28）: 「11. TDD 開発ワークフロー（tdd-dev）との関係」章を追加（ブランチ粒度＝plan.md項目単位、コミット/squashの関係、品質・セキュリティチェックの二層、dependabot PR）。

@@ -3,9 +3,9 @@
 GitHub Actions 上で Claude Code の公式 `code-review` プラグインを実行し、Pull Request に対するコードレビューを自動化する仕様を定める。
 
 - 対象リポジトリ: `workout_tracker`（Public / ソロ開発）
-- 版: 2.0（2026-08-03 改訂）
+- 版: 2.1（2026-08-04 改訂）
 - 関連ドキュメント: [`docs/branching-rules.md`](./branching-rules.md) / リポジトリ直下の `CLAUDE.md`
-- ステータス: **PoC 前提の暫定仕様・未実装**（本ドキュメント以外のファイルは未変更）
+- ステータス: **PoC 前提の暫定仕様**。ワークフロー・Secret・GitHub App は導入済みで、[12章](#12-poc実証) の検証待ち
 
 > **本仕様は PoC（実証）を経て確定させる。** 未検証の前提が複数あり、特に [16.1](#16-未確認事項) の `--comment` 引数は、これが誤っていると**レビューが実行されても PR に何も投稿されない**。導入したら必ず [12章](#12-poc実証) を実施すること。
 
@@ -51,6 +51,7 @@ PR テンプレートには「差分を自分で一読した」というチェ�
 | action の保守状況 | 最新リリース v1.0.183（2026-07-25） | `gh release list` |
 | 公式 `code-review` プラグイン | `anthropics/claude-code` の marketplace に登録あり（`plugins/code-review`） | marketplace.json |
 | リポジトリ直下の `CLAUDE.md` | 草案を作成済み（未コミット。→ [11.1](#111-phase-0-claudemd-の整備)） | ファイル確認 |
+| **ワークフロー変更を含む PR ではレビューが走らない** | **確認済み（PR #13）。** action は「ワークフローファイルがデフォルトブランチ上の内容と一致すること」を実行条件としており、不一致なら処理をスキップして**ジョブは success で終了**する。PR でワークフローを書き換えて Secret を持ち出す攻撃への対策 | PR #13 の `auto-review` ジョブログ |
 | 詳細仕様書 | **リポジトリ外**（`~/plans/SPEC-workout-tracker-20260723.md`）。プラグインは `CLAUDE.md` しか読まないため、リポジトリ内に置いてもレビュー内容は変わらない（→ [4.1](#41-プラグインの挙動確認済み)） | プラグインのコマンド定義を精読 |
 
 ### 2.1 採用しない選択肢とその理由
@@ -133,7 +134,7 @@ Anthropic 公式のマネージド Code Review（GitHub App のみで動作し `
 2. **テストの欠落は既定では指摘されない。** 除外リストに `lack of test coverage` が明記されているため、TDD を運用するなら `CLAUDE.md` に明示的に書く必要がある
 3. **`synchronize` を使ってはならない。** 「既に Claude がコメント済みの PR はスキップ」するため、2回目以降の push でレビューが無言でスキップされる（[6.2](#62-トリガー仕様)）
 4. **`track_progress` を有効にしてはならない。** この機能は実行前に PR へ進捗追跡コメントを投稿するが、それをプラグインの skip 判定が「Claude が既にコメント済み」と解釈し、**自分自身のコメントで自分をスキップさせる**恐れがある（[6.6](#66-ワークフロー定義) / 検証項目 [12.2](#122-検証項目) No.7）
-5. **`--allowedTools` を渡さない。** 許可ツールはプラグイン側の frontmatter が規定するため、ワークフロー側で重ねて指定すると競合しうる（検証項目 No.8）
+5. **`auto-review` では `--allowedTools` を渡さない。** 許可ツールはプラグイン側の frontmatter が規定するため、ワークフロー側で重ねて指定すると競合しうる（検証項目 No.8）。逆に `mention` はプラグインを通さずツール制限が効かないため、**ワークフロー側で明示指定する**（[6.3](#63-ジョブ仕様) / [9章](#9-セキュリティ設計)）
 
 ---
 
@@ -218,6 +219,7 @@ Settings → Secrets and variables → Actions → New repository secret
 | 実行条件 | コメント本文に `@claude` を含む |
 | タイムアウト | 30 分 |
 | 権限 | `contents: read` / `pull-requests: write` / `issues: write` / `id-token: write` / `actions: read` | **`contents: write` を与えない**。理由は下記 |
+| `--allowedTools` | **明示指定する**（読み取り系＋`gh pr` 系のみ） | `auto-review` と違いプラグインを通さないため、ツール制限が効かない。Claude App のトークンが広い権限を持つことへの実効的な対策（[9章](#9-セキュリティ設計)） |
 
 `contents: write` を与えれば `@claude 修正して` でコミットまで行えるが、**意図的に与えない**。指摘を読んで自分で直す工程そのものが本仕様の目的（[1.2](#12-目的)）であり、権限を絞ることは制約ではなく設計判断である。コードの修正はローカルの Claude Code で行う。
 
@@ -276,7 +278,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -318,7 +320,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -326,8 +328,10 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # auto-review と違いプラグインを通さないため、ツールをここで明示的に制限する（9章参照）
           claude_args: |
             --max-turns 20
+            --allowedTools "Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Bash(git log:*),Bash(git diff:*),mcp__github_inline_comment__create_inline_comment"
             --append-system-prompt "回答は日本語で行う。ファイル名・識別子・コード片は原文のまま引用する。コードの変更は行わず、方針の説明と該当箇所の提示に留める。"
 ```
 
@@ -409,7 +413,8 @@ jobs:
 | プロンプトインジェクション | PR 本文やコメントに隠し指示が埋め込まれるリスク。action は HTML コメント・不可視文字・画像 alt 等をサニタイズするが完全ではないと公式に明記 | ソロ開発のため外部入力は実質自分の書いたものに限られる。将来外部から PR を受ける場合は `include_comments_by_actor` による許可リスト運用を検討する |
 | Secret の露出 | ワークフローファイルは Public だが Secret 値は含まれない。fork PR / dependabot PR には Secret が渡らない | `${{ secrets.* }}` 参照のみとし直書きを禁止（[5.3](#53-取り扱い規約)） |
 | `pull_request_target` の使用 | fork PR で Secret にアクセスできてしまう危険なトリガー | **使用しない**。fork PR は [6.5](#65-スキップ条件) でスキップする |
-| Claude による意図しないコード変更 | 両ジョブとも `contents: read` で、そもそも書き込めない | 権限で担保（[6.3](#63-ジョブ仕様)） |
+| **Claude App のトークンがワークフローの `permissions:` より広い** | **事実。**`permissions:` が絞るのは自動生成の `GITHUB_TOKEN` であり、Claude App が発行するトークンは App のインストール権限（actions / checks / code / discussions / issues / pull requests / **repository hooks** / **workflows** の read & write ほか）をそのまま持つ。公式 `docs/security.md`「The token cannot access other repositories or perform actions beyond the configured permissions」の *configured permissions* は App 側の設定を指す | **ツールの制限で担保する。** `auto-review` はプラグインの `allowed-tools` により `gh pr/issue` 系と `gh search` のみで、`gh api` もファイル書き込みも不可。`mention` はワークフロー側で `--allowedTools` を明示指定（[6.6](#66-ワークフロー定義)）。権限を最小化したい場合は自作 GitHub App を使う（`docs/setup.md`「Your app's token will have the exact permissions you configured, nothing more」） |
+| Claude による意図しないコード変更 | ジョブ権限は両方とも `contents: read` だが、上記のとおり App トークンには依存しない | 実効的な担保はツール制限。`auto-review` はファイル編集ツールを持たず、`mention` も `Read` / `Grep` / `Glob` の読み取り系に限定 |
 | 外部マーケットプレイスからのプラグイン取得 | `plugin_marketplaces` に指定した Git URL からコードを取得して実行する | 指定先を `https://github.com/anthropics/claude-code.git`（Anthropic 公式）に限定する。サードパーティのマーケットプレイスは追加しない |
 
 ---
@@ -478,7 +483,7 @@ jobs:
 
 | # | 検証内容 | 確認方法 | 判定基準 | 優先度 |
 |---|---|---|---|---|
-| 1 | **`--comment` の要否と引数形式** | 11.2.8 の PR で、総評コメントが投稿されるか | 投稿される。されない場合は引数形式を変えて再試行（[12.2.1](#1221---comment-の検証手順)） | **最優先** |
+| 1 | **`--comment` の要否と引数形式** | **ワークフロー導入 PR をマージした後、次の PR で**総評コメントが投稿されるか（→ [12.6](#126-ワークフロー変更を含む-pr-では検証できない)） | 投稿される。されない場合は引数形式を変えて再試行（[12.2.1](#1221---comment-の検証手順)） | **最優先** |
 | 2 | 対象 PR の指定形式が解釈されるか | ジョブログで、正しい PR 番号のレビューが行われているか | 対象を取り違えていない | 最優先 |
 | 3 | 日本語で出力されるか | 投稿されたコメントの言語 | 総評・インラインとも日本語 | 高 |
 | 4 | インラインコメントが投稿されるか | PR の Files changed タブ | 該当行にコメントが付く（[5.4](#54-既知の制約) の未確認事項の検証を兼ねる） | 高 |
@@ -552,8 +557,14 @@ commit 7918fcf64f57ee6015ea18e936d912e30b182bdb
   → 6.6 節にワークフロー定義の全文
 ```
 
+このコミットは squash マージで `main` の履歴には含まれないため、次のいずれかで参照する。
+
 ```bash
-# 参照方法
+# ローカル（タグ経由。推奨）
+git show pr-review-spec-v1:docs/pr-review-automation.md
+
+# ローカルに無い場合は GitHub の PR ref から取得する
+git fetch origin refs/pull/12/head
 git show 7918fcf:docs/pr-review-automation.md
 ```
 
@@ -569,6 +580,21 @@ git show 7918fcf:docs/pr-review-automation.md
 | `synchronize` | 使えない（重複 skip のため） | 使える |
 
 撤退条件 5（静かすぎる）で撤退する場合は、**プラグイン（バグ検出）＋ 手書き（学習向け改善提案）の二段構成**も選択肢になる。ただし枠の消費は加算されるため、撤退条件 2 と両立しない場合は手書き単独とする。
+
+### 12.6 ワークフロー変更を含む PR では検証できない
+
+action は実行前にワークフローファイルを検証し、**デフォルトブランチ上の内容と一致しない場合は処理をスキップする**（PR #13 で確認）。ジョブは `success` で終わり、10秒程度で完了するため、ログを見ないと「レビューが走ったが指摘ゼロだった」と誤認しやすい。
+
+```
+Skipping action due to workflow validation: The workflow file must exist and have
+identical content to the version on the repository's default branch.
+```
+
+このため次の制約がある。
+
+- **ワークフロー導入 PR 自身では `--comment` を検証できない。** マージ後の最初の PR が実質的な第1回検証になる
+- **今後 `claude-review.yml` を変更する PR には、レビューが付かない。** 変更をマージした次の PR から反映される
+- ジョブが数秒で `success` になった場合は、まずこのスキップを疑う
 
 ---
 
@@ -641,8 +667,9 @@ AI レビューは導入して終わりではなく、運用しながら精度�
 | 16.4 | GitHub Actions での消費が Max の枠とどう合算されるか | 枠の圧迫 | [12.2](#122-検証項目) No.5 |
 | 16.5 | `--append-system-prompt` の日本語指定が、サブエージェントを含む最終出力まで効くか | 英語で投稿される可能性 | [12.2](#122-検証項目) No.3 |
 | 16.6 | `track_progress` の進捗コメントがプラグインの skip 判定を誤爆させるか | 本仕様では無効化して回避済み。有効化したい場合に要検証 | [12.2](#122-検証項目) No.7 |
-| 16.7 | プラグイン側 `allowed-tools` とワークフロー側 `--allowedTools` の優先関係 | 本仕様では後者を指定せず回避済み | [12.2](#122-検証項目) No.8 |
+| 16.7 | プラグイン側 `allowed-tools` とワークフロー側 `--allowedTools` の優先関係 | `auto-review` では後者を指定せず回避済み。`mention` は後者のみを使うため競合しない | [12.2](#122-検証項目) No.8 |
 | 16.8 | 「🔴 要修正が残っていたらマージをブロック」の実現方法 | — | [17.2](#172-マージゲート化) を検討する時点 |
+| 16.9 | `mention` ジョブの `--allowedTools` が実用に足りるか（絞りすぎて回答できないことがないか） | 質問に答えられない | [12.2](#122-検証項目) No.9 / フェーズ6のメンション試行 |
 
 ---
 
@@ -687,6 +714,8 @@ PoC が完了し、レビューの所要時間と品質が把握できるまで�
 ---
 
 ## 変更履歴
+
+- 2.1（2026-08-04）: Claude App のトークンがワークフローの `permissions:` では絞られないことが判明したため、9章のリスク評価を訂正し、`mention` ジョブに `--allowedTools` を追加（6.3 / 6.6 / 4.2）。`actions/checkout` を既存 `ci.yml` に合わせて v7 に変更。撤退先コミットの参照方法をタグ `pr-review-spec-v1` 経由に変更（12.5）。
 
 - 2.0（2026-08-03）: 公式 `code-review` プラグイン方式に変更し、PoC 前提の暫定仕様として再構成。`--comment` の未検証を最優先事項に格上げ。`synchronize` を削除（プラグインの重複 skip 仕様のため）。`mention` の権限を `contents: read` に変更。`track_progress` と `--allowedTools` を意図的に無効化。`CLAUDE.md` の整備を Phase 0 として導入手順の先頭へ。PoC 章・評価軸6項目・検証用 PR・撤退基準・振り返り章を追加。手書きプロンプト方式は commit `7918fcf` への参照に置き換え、本文からは削除。なお策定過程で詳細仕様書のリポジトリ内取り込みを検討したが、プラグインが `CLAUDE.md` しか読まないためレビュー内容が変わらず、Public リポジトリへの公開のみが代償として残ることから見送った（[2章](#2-前提条件) / [4.1](#41-プラグインの挙動確認済み)）。
 - 1.0（2026-08-03）: 初版策定。GitHub Actions ＋ `claude-code-action@v1` ＋ OAuth トークン認証による、手書きプロンプト方式の自動レビューと `@claude` メンションの併用構成。

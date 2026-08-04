@@ -170,44 +170,46 @@
 - [x] ステップ1.1: 【要確認/Git】push 前の秘密情報混入確認（差分3ファイル・1,131行をパターン検査。検出ゼロ。`CLAUDE_CODE_OAUTH_TOKEN` の出現11箇所は全て Secret 名の言及か `${{ secrets.* }}` 参照）
 - [x] ステップ1.2: 【要確認/Git/gh】ブランチ `docs/pr-review-automation` を push する（リモートに `docs/SPEC.md` が存在しないことを確認済み）
 - [x] ステップ1.3: 【Git/gh】PR を作成する（**PR #12**。事前に RuboCop 32ファイル no offenses / RSpec 11 examples 0 failures を確認）
-- [ ] ステップ1.4: 【CI待ち】CI 4ジョブが green になるのを確認する
-- [ ] ステップ1.5: 【要確認/Git/gh】squash マージする
-- [ ] ステップ1.6: 【Git/gh】ローカルの `main` を最新化する
+- [x] ステップ1.4: 【CI待ち】CI 4ジョブが green になるのを確認する（run `30821866474` / `2d732f2` に対し lint・scan_js・scan_ruby・test すべて pass）
+- [x] ステップ1.5: 【要確認/Git/gh】squash マージする（`f6a51df`。リモートブランチは自動削除）
+- [x] ステップ1.6: 【Git/gh】ローカルの `main` を最新化する。あわせて撤退先コミット `7918fcf` にタグ `pr-review-spec-v1` を付け、ローカルブランチ削除後も参照できるようにした
 
 ### フェーズ2: 認証とアプリの準備
 
-- [ ] ステップ2.1: 【ローカル】`claude setup-token` を実行し OAuth トークンを発行する
-- [ ] ステップ2.2: 【Web】Settings → Secrets and variables → Actions に `CLAUDE_CODE_OAUTH_TOKEN` を登録する
-- [ ] ステップ2.3: 【Git/gh】`gh secret list` で登録を確認し、作業ツリーにトークンが残っていないことを確認する
-- [ ] ステップ2.4: 【Web】Claude GitHub App（https://github.com/apps/claude ）を `workout_tracker` にインストールする。対象は当該リポジトリのみ
-- [ ] ステップ2.5: 【調査】App の権限が Contents / Issues / Pull requests の Read & Write であることを確認する
+- [x] ステップ2.1: 【ローカル】`claude setup-token` を実行し OAuth トークンを発行する
+- [x] ステップ2.2: 【Web】Settings → Secrets and variables → Actions に `CLAUDE_CODE_OAUTH_TOKEN` を登録する
+- [x] ステップ2.3: 【Git/gh】`gh secret list` で登録を確認（`CLAUDE_CODE_OAUTH_TOKEN` / 2026-08-04T06:39:50Z）。作業ツリーにトークンの残存なし
+- [x] ステップ2.4: 【Web】Claude GitHub App（https://github.com/apps/claude ）を `workout_tracker` にインストールする。対象は当該リポジトリのみ
+- [x] ステップ2.5: 【調査】App の権限を確認。**公式ドキュメントの記載（Contents / Issues / Pull requests）より広く**、actions / checks / code / discussions / issues / pull requests / repository hooks / workflows の read & write ＋ commit statuses・metadata の read だった。ワークフローの `permissions:` ではこのトークンを絞れないため、**`mention` ジョブに `--allowedTools` を追加して対処**（仕様書 9章・6.3）
+  - API での再確認は不可（ユーザートークンでは App インストール一覧を参照できず 403）。初回実行時に実質的に確認される
 
 ### フェーズ3: ワークフローの作成
 
-- [ ] ステップ3.1: 【Git/gh】トピックブランチ `ci/claude-pr-review` を `main` から作成する
-- [ ] ステップ3.2: 【ローカル】`.github/workflows/claude-review.yml` を仕様書 6.6 の内容で作成する
-- [ ] ステップ3.3: 【調査】`auto-review` の `on:` に `synchronize` が含まれていないことを確認する（仕様書 6.2）
-- [ ] ステップ3.4: 【調査】`track_progress` と `--allowedTools` を設定していないことを確認する（仕様書 4.2）
-- [ ] ステップ3.5: 【調査】`mention` の権限が `contents: read` であることを確認する（仕様書 6.3）
-- [ ] ステップ3.6: 【調査】`prompt` に `--comment` が含まれていることを確認する（仕様書 12.2.1）
-- [ ] ステップ3.7: 【調査】YAML の構文を確認する（`actions/checkout` のバージョンを既存 `ci.yml` と揃える）
+- [x] ステップ3.1: 【Git/gh】トピックブランチ `ci/claude-pr-review` を `main` から作成する
+- [x] ステップ3.2: 【ローカル】`.github/workflows/claude-review.yml` を仕様書 6.6 の内容で作成する
+- [x] ステップ3.3: 【調査】`auto-review` の `on:` に `synchronize` が含まれていないことを確認する（`types: [opened, reopened, ready_for_review]`）
+- [x] ステップ3.4: 【調査】`track_progress` と `--allowedTools` を設定していないことを確認する（出現はコメント行のみ）
+- [x] ステップ3.5: 【調査】`mention` の権限が `contents: read` であることを確認する
+- [x] ステップ3.6: 【調査】`prompt` に `--comment` が含まれていることを確認する
+- [x] ステップ3.7: 【調査】YAML の構文を確認する。**`actions/checkout` を v6 → v7 に修正**（既存 `ci.yml` は v7。仕様書 6.6 も合わせて更新）。Ruby の YAML パーサで `jobs = auto-review, mention` を確認
 
 ### フェーズ4: 運用ドキュメントの改訂
 
-- [ ] ステップ4.1: 【ローカル】`docs/branching-rules.md` 7.1 にレビュー確認工程（6b）を追加する
-- [ ] ステップ4.2: 【ローカル】同 7.2 に運用ルール3項目を追加する（採否は自分で判断／失敗時の代替／「No issues found」でも自己確認）
-- [ ] ステップ4.3: 【ローカル】同 9章に dependabot PR は自動レビュー対象外である旨を追記する
-- [ ] ステップ4.4: 【ローカル】同 11章に `docs/pr-review-automation.md` への参照を追加する
-- [ ] ステップ4.5: 【ローカル】同 変更履歴に版を追記する
-- [ ] ステップ4.6: 【ローカル】`.github/pull_request_template.md` にレビュー確認のチェック項目を追加する
+- [x] ステップ4.1: 【ローカル】`docs/branching-rules.md` 7.1 にレビュー確認工程（6b）を追加する
+- [x] ステップ4.2: 【ローカル】同 7.2 に運用ルールを追加する（採否は自分で判断／「No issues found」でも自己確認／失敗時の代替／再レビューはメンション。計4項目）
+- [x] ステップ4.3: 【ローカル】同 9章に dependabot PR は自動レビュー対象外である旨を追記する
+- [x] ステップ4.4: 【ローカル】同 11章に `docs/pr-review-automation.md` への参照を追加する
+- [x] ステップ4.5: 【ローカル】同 変更履歴に版を追記する（1.3 → 1.4）
+- [x] ステップ4.6: 【ローカル】`.github/pull_request_template.md` にレビュー確認のチェック項目を追加する
 
 ### フェーズ5: 第1回検証（ワークフロー導入 PR 自身で実施）
 
 **最優先。ここで `--comment` の可否が判明する。**
 
-- [ ] ステップ5.1: 【要確認/Git】変更をコミットする
-- [ ] ステップ5.2: 【要確認/Git/gh】push して PR を作成する
-- [ ] ステップ5.3: 【CI待ち】`Claude Review / auto-review` ジョブが起動し完走することを確認する
+- [x] ステップ5.1: 【要確認/Git】変更をコミットする（`c53551d` / `71bbc6c`）
+- [x] ステップ5.2: 【要確認/Git/gh】push して PR を作成する（**PR #13**。事前に RuboCop no offenses / RSpec 11 examples 0 failures / 秘密情報スキャン検出ゼロ）
+- [x] ステップ5.3: 【CI待ち】`Claude Review / auto-review` ジョブが起動することを確認（起動したが**10秒で success**。ログにより action 側のワークフロー検証でスキップされたと判明）
+- [x] ステップ5.3b: 【調査】**仮定が外れた。** ワークフロー変更を含む PR では、action がワークフローファイルとデフォルトブランチの内容の一致を要求するため実行されない。ステップ5.4〜5.9 は**マージ後の最初の PR に持ち越す**（仕様書 12.6）
 - [ ] ステップ5.4: 【観測】**総評コメントが PR に投稿されるか**を確認する
   - 投稿されない場合、仕様書 12.2.1 の順に `prompt` を変更して再試行する
     - パターン2: `/code-review:code-review --comment`（対象を省略）
@@ -295,11 +297,22 @@
 - 2026-08-03: プラグインの除外リストに `lack of test coverage` が明記されており、テストの欠落は既定では指摘されない。`CLAUDE.md` に明示的な規約を書くことで初めて検出対象になる。
 - 2026-08-03: `CLAUDE.md` 草案に技術スタックの誤記があった（`solid_queue` 等を採用と記載）。実際は `rails new` の既定生成物で未設定・未使用であり、仕様書 2.1 では Stage 2 から Sidekiq ＋ Redis を採用、Solid Queue は不採用。誤った規約はレビューの誤検知を誘発するため修正済み。
 - 2026-08-03: **詳細仕様書のリポジトリ内取り込みを一度実施したが撤回した。** プラグインのコマンド定義を全件精査した結果、参照ファイルとして言及されるのは `CLAUDE.md` のみで（L24〜26 でルートおよび変更ファイルと同階層の `CLAUDE.md` を収集）、他のドキュメントは1箇所も登場しない。バグ検出エージェントには「差分そのものに集中し、追加の文脈を読むな」と明示指示がある（L36）。したがって**仕様書をリポジトリに置いてもレビュー内容は変わらず**、Public リポジトリへの公開という代償だけが残る。仕様準拠をレビューさせたい場合は、仕様書を置くのではなく**不変条件を規則の形に翻訳して `CLAUDE.md` に書く**必要がある。この作業は LINE Webhook 実装（`plan.md` 7章）着手時に行う。
+- 2026-08-04: **Claude GitHub App のトークンは、ワークフローの `permissions:` ブロックでは絞られない。** `permissions:` が制御するのは自動生成の `GITHUB_TOKEN` のみで、App が発行するトークンは App のインストール権限をそのまま持つ（公式 `docs/security.md`）。実際の要求権限は公式ドキュメントの記載（Contents / Issues / Pull requests）より広く、**repository hooks と workflows への write を含む**。実効的な防御はツール制限であり、`auto-review` はプラグインの `allowed-tools`（`gh api` を含まない）、`mention` はワークフロー側の `--allowedTools` で塞ぐ。権限そのものを絞りたい場合は自作 GitHub App を使う。
 - 2026-08-03: リポジトリを Private 化する案は採らない。無料の個人アカウントでは Private リポジトリで Ruleset も branch protection も使えず、`main` の直 push 禁止（`docs/branching-rules.md` の根幹）が失われる。維持するには GitHub Pro が必要で、Actions の実行時間も従量制になる。
+
+- 2026-08-04: **ワークフロー変更を含む PR では自動レビューが走らない。** action は実行前にワークフローファイルがデフォルトブランチ上の内容と一致するかを検証し、不一致ならスキップする（PR でワークフローを書き換えて Secret を持ち出す攻撃への対策）。**ジョブは `success` で終わる**ため、ログを見ないと「レビューが走って指摘ゼロ」と誤認する。所要10秒程度が見分ける目安。今後 `claude-review.yml` を変更する PR にもレビューは付かない。
 
 ## 問題・計画変更履歴
 
-- なし
+### 2026-08-04
+
+- 該当ステップ: 5.3〜5.9
+- 問題: ワークフロー導入 PR（#13）自身で `--comment` を検証する計画だったが、レビューが実行されなかった
+- 原因: action 側のワークフロー検証。ワークフローファイルがデフォルトブランチの内容と一致しない PR では処理をスキップする仕様
+- 影響: 最優先の未確認事項（`--comment` の要否）が、この PR では検証できない
+- 対応: PR #13 をマージし、**マージ後の最初の PR（`plan.md` 2.4 の実装 PR を想定）を第1回検証とする**
+- 計画の変更内容: ステップ5.4〜5.9 をフェーズ6の先頭に移す。仕様書に 12.6 を追加して制約を明文化
+- ユーザー確認の要否: 不要（計画の「仮定」に外れた場合の対応として記載済みの内容と一致）
 
 ## 実行した検証
 
