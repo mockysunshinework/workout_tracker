@@ -24,7 +24,9 @@ Devise.setup do |config|
   # Configure the e-mail address which will be shown in Devise::Mailer,
   # note that it will be overwritten if you use your own mailer class
   # with default "from" parameter.
-  config.mailer_sender = "please-change-me-at-config-initializers-devise@example.com"
+  # `.example` is a reserved TLD (RFC 2606), so this address is never routable.
+  # The production sender is decided once hosting is fixed (SPEC 10, #1 and #8).
+  config.mailer_sender = "no-reply@workout-tracker.example"
 
   # Configure the class responsible to send e-mails.
   # config.mailer = 'Devise::Mailer'
