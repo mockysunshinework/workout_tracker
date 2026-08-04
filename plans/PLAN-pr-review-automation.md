@@ -170,9 +170,9 @@
 - [x] ステップ1.1: 【要確認/Git】push 前の秘密情報混入確認（差分3ファイル・1,131行をパターン検査。検出ゼロ。`CLAUDE_CODE_OAUTH_TOKEN` の出現11箇所は全て Secret 名の言及か `${{ secrets.* }}` 参照）
 - [x] ステップ1.2: 【要確認/Git/gh】ブランチ `docs/pr-review-automation` を push する（リモートに `docs/SPEC.md` が存在しないことを確認済み）
 - [x] ステップ1.3: 【Git/gh】PR を作成する（**PR #12**。事前に RuboCop 32ファイル no offenses / RSpec 11 examples 0 failures を確認）
-- [ ] ステップ1.4: 【CI待ち】CI 4ジョブが green になるのを確認する
-- [ ] ステップ1.5: 【要確認/Git/gh】squash マージする
-- [ ] ステップ1.6: 【Git/gh】ローカルの `main` を最新化する
+- [x] ステップ1.4: 【CI待ち】CI 4ジョブが green になるのを確認する（run `30821866474` / `2d732f2` に対し lint・scan_js・scan_ruby・test すべて pass）
+- [x] ステップ1.5: 【要確認/Git/gh】squash マージする（`f6a51df`。リモートブランチは自動削除）
+- [x] ステップ1.6: 【Git/gh】ローカルの `main` を最新化する。あわせて撤退先コミット `7918fcf` にタグ `pr-review-spec-v1` を付け、ローカルブランチ削除後も参照できるようにした
 
 ### フェーズ2: 認証とアプリの準備
 
@@ -184,22 +184,22 @@
 
 ### フェーズ3: ワークフローの作成
 
-- [ ] ステップ3.1: 【Git/gh】トピックブランチ `ci/claude-pr-review` を `main` から作成する
-- [ ] ステップ3.2: 【ローカル】`.github/workflows/claude-review.yml` を仕様書 6.6 の内容で作成する
-- [ ] ステップ3.3: 【調査】`auto-review` の `on:` に `synchronize` が含まれていないことを確認する（仕様書 6.2）
-- [ ] ステップ3.4: 【調査】`track_progress` と `--allowedTools` を設定していないことを確認する（仕様書 4.2）
-- [ ] ステップ3.5: 【調査】`mention` の権限が `contents: read` であることを確認する（仕様書 6.3）
-- [ ] ステップ3.6: 【調査】`prompt` に `--comment` が含まれていることを確認する（仕様書 12.2.1）
-- [ ] ステップ3.7: 【調査】YAML の構文を確認する（`actions/checkout` のバージョンを既存 `ci.yml` と揃える）
+- [x] ステップ3.1: 【Git/gh】トピックブランチ `ci/claude-pr-review` を `main` から作成する
+- [x] ステップ3.2: 【ローカル】`.github/workflows/claude-review.yml` を仕様書 6.6 の内容で作成する
+- [x] ステップ3.3: 【調査】`auto-review` の `on:` に `synchronize` が含まれていないことを確認する（`types: [opened, reopened, ready_for_review]`）
+- [x] ステップ3.4: 【調査】`track_progress` と `--allowedTools` を設定していないことを確認する（出現はコメント行のみ）
+- [x] ステップ3.5: 【調査】`mention` の権限が `contents: read` であることを確認する
+- [x] ステップ3.6: 【調査】`prompt` に `--comment` が含まれていることを確認する
+- [x] ステップ3.7: 【調査】YAML の構文を確認する。**`actions/checkout` を v6 → v7 に修正**（既存 `ci.yml` は v7。仕様書 6.6 も合わせて更新）。Ruby の YAML パーサで `jobs = auto-review, mention` を確認
 
 ### フェーズ4: 運用ドキュメントの改訂
 
-- [ ] ステップ4.1: 【ローカル】`docs/branching-rules.md` 7.1 にレビュー確認工程（6b）を追加する
-- [ ] ステップ4.2: 【ローカル】同 7.2 に運用ルール3項目を追加する（採否は自分で判断／失敗時の代替／「No issues found」でも自己確認）
-- [ ] ステップ4.3: 【ローカル】同 9章に dependabot PR は自動レビュー対象外である旨を追記する
-- [ ] ステップ4.4: 【ローカル】同 11章に `docs/pr-review-automation.md` への参照を追加する
-- [ ] ステップ4.5: 【ローカル】同 変更履歴に版を追記する
-- [ ] ステップ4.6: 【ローカル】`.github/pull_request_template.md` にレビュー確認のチェック項目を追加する
+- [x] ステップ4.1: 【ローカル】`docs/branching-rules.md` 7.1 にレビュー確認工程（6b）を追加する
+- [x] ステップ4.2: 【ローカル】同 7.2 に運用ルールを追加する（採否は自分で判断／「No issues found」でも自己確認／失敗時の代替／再レビューはメンション。計4項目）
+- [x] ステップ4.3: 【ローカル】同 9章に dependabot PR は自動レビュー対象外である旨を追記する
+- [x] ステップ4.4: 【ローカル】同 11章に `docs/pr-review-automation.md` への参照を追加する
+- [x] ステップ4.5: 【ローカル】同 変更履歴に版を追記する（1.3 → 1.4）
+- [x] ステップ4.6: 【ローカル】`.github/pull_request_template.md` にレビュー確認のチェック項目を追加する
 
 ### フェーズ5: 第1回検証（ワークフロー導入 PR 自身で実施）
 

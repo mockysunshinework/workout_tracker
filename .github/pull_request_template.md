@@ -8,3 +8,4 @@
 - [ ] `bundle exec rspec` が green
 - [ ] `bin/rubocop` が green
 - [ ] 差分を自分で一読した
+- [ ] Claude のレビュー結果を確認した（指摘に対応した、または対応不要と判断した理由を記載した）

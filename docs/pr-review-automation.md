@@ -276,7 +276,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -318,7 +318,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -552,8 +552,14 @@ commit 7918fcf64f57ee6015ea18e936d912e30b182bdb
   → 6.6 節にワークフロー定義の全文
 ```
 
+このコミットは squash マージで `main` の履歴には含まれないため、次のいずれかで参照する。
+
 ```bash
-# 参照方法
+# ローカル（タグ経由。推奨）
+git show pr-review-spec-v1:docs/pr-review-automation.md
+
+# ローカルに無い場合は GitHub の PR ref から取得する
+git fetch origin refs/pull/12/head
 git show 7918fcf:docs/pr-review-automation.md
 ```
 
