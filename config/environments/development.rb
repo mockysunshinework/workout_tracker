@@ -34,6 +34,12 @@ Rails.application.configure do
   # Don't care if the mailer can't send.
   config.action_mailer.raise_delivery_errors = false
 
+  # Write sent mail to tmp/letter_opener and open it in the browser instead of
+  # delivering it. Production delivery is decided once hosting is fixed
+  # (SPEC 10, #8).
+  config.action_mailer.delivery_method = :letter_opener
+  config.action_mailer.perform_deliveries = true
+
   # Make template changes take effect immediately.
   config.action_mailer.perform_caching = false
 

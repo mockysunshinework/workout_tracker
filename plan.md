@@ -42,9 +42,10 @@
   - 対象画面: 仕様書 4.4 画面 1 / テスト種別: request spec
   - 完了条件: ブラウザで登録〜ログインが成立し、request spec が通る
   - 決定（2026-07-31・ユーザー承認）: ログイン後の着地先として **最小 `home#index`（`root "home#index"`／`authenticate_user!`）を暫定設置**。本ダッシュボード（グラフ・サマリ）は **6.3 で置き換える**。合わせて sign_up に `name` 欄追加＋ApplicationController で `:sign_up` の `name` を permit、layout に flash を追加（2.1 保留分）
-- [ ] 2.4 開発用メール送信の設定
+- [x] 2.4 開発用メール送信の設定
   - 実施内容: パスワードリセットメールを開発環境で確認できるよう letter_opener 等を設定する（本番メールは仕様書 10 章 #8 のとおり対象外）
   - 完了条件: 開発環境でリセットメールの内容を確認できる
+  - 実施結果（2026-08-04）: `letter_opener` を development グループに追加し、`development.rb` に `delivery_method = :letter_opener` を設定。あわせて `config.mailer_sender` が Devise 生成時のプレースホルダのままだったため `no-reply@workout-tracker.example`（RFC 2606 の予約 TLD）へ変更。本番の差出人はホスティング確定時に決定（仕様書 10 章 #1 / #8）。開発環境で実際に送信し、`tmp/letter_opener/.../rich.html` に差出人・再設定リンクが出力されることを確認。request spec（`spec/requests/password_reset_spec.rb`）4件を追加
 
 ## 3. 種目マスタ（F-06 データ層）
 
