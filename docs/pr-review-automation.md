@@ -581,6 +581,30 @@ git show 7918fcf:docs/pr-review-automation.md
 
 撤退条件 5（静かすぎる）で撤退する場合は、**プラグイン（バグ検出）＋ 手書き（学習向け改善提案）の二段構成**も選択肢になる。ただし枠の消費は加算されるため、撤退条件 2 と両立しない場合は手書き単独とする。
 
+### 12.5b 第1回検証の結果（2026-08-04）
+
+ローカルでの実行と GitHub Actions での実行で結果が分かれた。
+
+| 経路 | 結果 |
+|---|---|
+| ローカル（`claude -p "/code-review:code-review <owner/repo>/pull/14 --comment"`） | **成功。** PR #14 に総評コメントを投稿 |
+| GitHub Actions | **失敗。** `is_error: true` / `duration_ms: 78` / `num_turns: 1` |
+
+確定した事項:
+
+- **`--comment` は必要かつ有効**（[16.1](#16-未確認事項) を解決）。省略するとプラグイン定義 L63 のとおり投稿されない
+- 対象指定形式 `owner/repo/pull/N` は解釈される（[16.2](#16-未確認事項) を解決）
+- **指摘ゼロ時の総評は日本語にならない。** プラグイン定義 L93〜99 が `No issues found. Checked for bugs and CLAUDE.md compliance.` という固定英文を投稿する仕様のため。指摘がある場合に日本語化が効くかは未確認
+
+Actions 側の失敗について切り分けた結果:
+
+- 認証は原因ではない（トークンを再発行・再登録しても同じ signature）
+- コマンド未解決も原因ではない（未解決の場合は `is_error: false` / `num_turns: 0` / `duration_ms: 8` で「Unknown command」を返す。実測で確認）
+- 初期化から結果まで 29ms しかなく、API への往復が発生していない。**プロセス内での失敗**
+- エラー本文は action が伏せるため未特定（`Running Claude Code via SDK (full output hidden for security)`）
+
+このため `display_report: true` と `--debug`、および `workflow_dispatch` を一時的に追加して原因を特定する。**いずれも診断用であり、原因特定後に削除する。**
+
 ### 12.6 ワークフロー変更を含む PR では検証できない
 
 action は実行前にワークフローファイルを検証し、**デフォルトブランチ上の内容と一致しない場合は処理をスキップする**（PR #13 で確認）。ジョブは `success` で終わり、10秒程度で完了するため、ログを見ないと「レビューが走ったが指摘ゼロだった」と誤認しやすい。

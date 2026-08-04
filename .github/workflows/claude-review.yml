@@ -4,6 +4,14 @@ on:
   pull_request:
     # synchronize は含めない（docs/pr-review-automation.md 6.2 参照）
     types: [opened, reopened, ready_for_review]
+  # 診断用。ワークフローを変更する PR ではレビューが走らない（12.6）ため、
+  # PR を作らずに再試行できる経路を用意する。原因特定後に削除する
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "レビュー対象の PR 番号"
+        required: true
+        type: string
   issue_comment:
     types: [created]
   pull_request_review_comment:
@@ -15,14 +23,15 @@ jobs:
   auto-review:
     # Draft / dependabot / fork PR はスキップ（6.5 参照）
     if: >-
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.draft == false &&
-      github.actor != 'dependabot[bot]' &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.draft == false &&
+       github.actor != 'dependabot[bot]' &&
+       github.event.pull_request.head.repo.full_name == github.repository) ||
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:
-      group: claude-auto-review-${{ github.event.pull_request.number }}
+      group: claude-auto-review-${{ github.event.pull_request.number || inputs.pr_number }}
       cancel-in-progress: true
     permissions:
       contents: read
@@ -43,10 +52,14 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           plugin_marketplaces: "https://github.com/anthropics/claude-code.git"
           plugins: "code-review@claude-code-plugins"
+          # 診断用。Claude が書いた内容を Step Summary に出す。
+          # show_full_output と違いツール実行結果は出力されない。原因特定後に削除する
+          display_report: true
           # --comment がないとプラグインは PR に何も投稿しない（16.1 / 12.2 No.1）
-          prompt: "/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }} --comment"
+          prompt: "/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number || inputs.pr_number }} --comment"
           # track_progress と --allowedTools は意図的に設定しない（4.2 参照）
           claude_args: |
+            --debug
             --max-turns 30
             --append-system-prompt "GitHub に投稿するレビューコメントは、総評・インラインコメントともにすべて日本語で記述する。ファイル名・識別子・コード片・CLAUDE.md からの引用は原文のまま扱う。"
 
