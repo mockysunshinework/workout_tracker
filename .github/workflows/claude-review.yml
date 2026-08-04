@@ -52,9 +52,11 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           plugin_marketplaces: "https://github.com/anthropics/claude-code.git"
           plugins: "code-review@claude-code-plugins"
-          # 診断用。Claude が書いた内容を Step Summary に出す。
-          # show_full_output と違いツール実行結果は出力されない。原因特定後に削除する
-          display_report: true
+          # 診断用。原因特定後に削除する。
+          # display_report は実行が失敗すると何も出力しないため、show_full_output に切り替える。
+          # 対象の実行はツールを1つも呼ばずに 78ms で終わるため、通常の懸念
+          # （差分・ファイル内容・環境変数の露出）は発生しない
+          show_full_output: true
           # --comment がないとプラグインは PR に何も投稿しない（16.1 / 12.2 No.1）
           prompt: "/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number || inputs.pr_number }} --comment"
           # track_progress と --allowedTools は意図的に設定しない（4.2 参照）
