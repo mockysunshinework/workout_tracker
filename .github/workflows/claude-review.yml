@@ -45,9 +45,16 @@ jobs:
           plugins: "code-review@claude-code-plugins"
           # --comment がないとプラグインは PR に何も投稿しない（16.1 / 12.2 No.1）
           prompt: "/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }} --comment"
-          # track_progress と --allowedTools は意図的に設定しない（4.2 参照）
+          # track_progress は意図的に設定しない（4.2 参照）。
+          # --allowedTools は必須。action は agent モードで claude_args の
+          # --allowedTools だけを見て MCP サーバの起動可否を決めるため、
+          # mcp__github_inline_comment__ を挙げないとインラインコメント用サーバが
+          # 起動せず、レビューが完走しても投稿できない
+          # （src/modes/agent/index.ts / src/mcp/install-mcp-server.ts。4.2 参照）。
+          # gh api は挙げない（9章。広い権限を持つ App トークンの実行経路を塞ぐ）
           claude_args: |
             --max-turns 30
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh search:*)"
             --append-system-prompt "GitHub に投稿するレビューコメントは、総評・インラインコメントともにすべて日本語で記述する。ファイル名・識別子・コード片・CLAUDE.md からの引用は原文のまま扱う。"
 
   mention:
