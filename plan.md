@@ -61,7 +61,8 @@
   - 対象: `exercises` テーブル
   - 完了条件: マイグレーション成功。NULL user_id 同士の重複が DB で拒否されることをテストで確認
   - 決定（2026-08-07・ユーザー承認）: **`NULLS NOT DISTINCT` を採用**（部分 index 2 本方式は不採用）。仕様書 4.5 の記述をそのまま 1 本の index で表現でき可読性が高いため。PostgreSQL 15 以降が要件（実環境は 17.10、Rails 8.1.3.1 が `nulls_not_distinct:` と schema.rb ダンプに対応）。将来 PG 15 未満へ移行する場合は index の張り替えのみで部分 index 方式へ切り替え可能（データ移行不要）
-  - 実施結果（2026-08-07）: `db/migrate/20260807023429_create_exercises.rb` を作成。`Exercise` モデルは 3.4 の作業のため、DB 制約は生 SQL で直接検証する `spec/db/exercises_table_spec.rb`（8 examples）を追加。`t.references :user` は `index: false`（複合 index が先頭列でカバーするため単独 index は作らない）
+  - 実施結果（2026-08-07）: `db/migrate/20260807023429_create_exercises.rb` を作成。`Exercise` モデルは 3.4 の作業のため、DB 制約は生 SQL で直接検証する `spec/db/exercises_table_spec.rb`（9 examples）を追加。`t.references :user` は `index: false`（複合 index が先頭列でカバーするため単独 index は作らない）
+  - 自動レビューの指摘に対応（2026-08-07）: `bodyweight` の既定値テストが、ヘルパーのキーワード引数既定値により常に列を明示していたため **DB の default を検証できていなかった**。省略時は列自体を INSERT から外す構造に修正。`default: true` に変えるとテストが失敗することを実際に確認済み（修正前は変えても GREEN のままだった）
 - [ ] 3.3 種目名正規化ロジックの実装
   - 実施内容: 仕様書 4.3.1(1)（NFKC・前後空白除去（全角含む）・ひらがな→カタカナ・英字小文字化）を単独のクラス/モジュールとして実装する
   - 完了条件: `ベンチプレス　`・`ベンチぷれす` → `ベンチプレス` を含む unit spec が通る

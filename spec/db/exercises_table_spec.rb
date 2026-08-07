@@ -2,12 +2,21 @@ require "rails_helper"
 
 # Exercise モデルは 3.4 で実装するため、ここでは DB 制約を生 SQL で直接検証する。
 RSpec.describe "exercises テーブル" do
-  def insert_exercise(user_id:, normalized_name:, name: "テスト種目", category: nil, bodyweight: false)
+  # optional に渡さなかった列は INSERT 文から除外する。
+  # 常に列を並べるとキーワード引数の既定値が入ってしまい、
+  # DB 側の default を検証できなくなるため。
+  def insert_exercise(user_id:, normalized_name:, name: "テスト種目", **optional)
+    unknown = optional.keys - %i[category bodyweight]
+    raise ArgumentError, "unknown column: #{unknown.join(", ")}" if unknown.any?
+
+    values = { user_id: user_id, name: name, normalized_name: normalized_name, **optional }
+    columns = values.keys.join(", ")
+    placeholders = Array.new(values.size, "?").join(", ")
+
     sql = ActiveRecord::Base.sanitize_sql_array([
-      <<~SQL, user_id, name, normalized_name, category, bodyweight
-        INSERT INTO exercises (user_id, name, normalized_name, category, bodyweight, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, NOW(), NOW())
-      SQL
+      "INSERT INTO exercises (#{columns}, created_at, updated_at) " \
+      "VALUES (#{placeholders}, NOW(), NOW())",
+      *values.values
     ])
     ActiveRecord::Base.connection.execute(sql)
   end
@@ -51,7 +60,8 @@ RSpec.describe "exercises テーブル" do
   end
 
   describe "カラム定義" do
-    it "bodyweight の既定値が false である" do
+    it "bodyweight と category を省略すると DB の既定値が入る" do
+      # 列自体を INSERT に含めないことで、DB 側の default を検証する
       insert_exercise(user_id: nil, normalized_name: "ベンチプレス")
 
       row = ActiveRecord::Base.connection.select_one(
@@ -59,6 +69,16 @@ RSpec.describe "exercises テーブル" do
       )
       expect(row["bodyweight"]).to be(false)
       expect(row["category"]).to be_nil
+    end
+
+    it "bodyweight と category を明示すればその値が入る" do
+      insert_exercise(user_id: nil, normalized_name: "懸垂", bodyweight: true, category: "背中")
+
+      row = ActiveRecord::Base.connection.select_one(
+        "SELECT bodyweight, category FROM exercises WHERE normalized_name = '懸垂'"
+      )
+      expect(row["bodyweight"]).to be(true)
+      expect(row["category"]).to eq("背中")
     end
 
     it "name が NULL の行を DB が拒否する" do
