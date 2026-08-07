@@ -52,8 +52,11 @@ jobs:
           # 起動せず、レビューが完走しても投稿できない
           # （src/modes/agent/index.ts / src/mcp/install-mcp-server.ts。4.2 参照）。
           # gh api は挙げない（9章。広い権限を持つ App トークンの実行経路を塞ぐ）
+          # --max-turns は上限であって予算ではない。引き上げても平均消費は増えず、
+          # 上限に当たった実行が打ち切られなくなるだけ。暴走の歯止めは
+          # timeout-minutes が担う。実測: 17 → 27 → 31（31 で error_max_turns。PR #21）
           claude_args: |
-            --max-turns 30
+            --max-turns 60
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh search:*)"
             --append-system-prompt "GitHub に投稿するレビューコメントは、総評・インラインコメントともにすべて日本語で記述する。ファイル名・識別子・コード片・CLAUDE.md からの引用は原文のまま扱う。"
 
