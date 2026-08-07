@@ -1,0 +1,82 @@
+require "rails_helper"
+
+# Exercise モデルは 3.4 で実装するため、ここでは DB 制約を生 SQL で直接検証する。
+RSpec.describe "exercises テーブル" do
+  def insert_exercise(user_id:, normalized_name:, name: "テスト種目", category: nil, bodyweight: false)
+    sql = ActiveRecord::Base.sanitize_sql_array([
+      <<~SQL, user_id, name, normalized_name, category, bodyweight
+        INSERT INTO exercises (user_id, name, normalized_name, category, bodyweight, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, NOW(), NOW())
+      SQL
+    ])
+    ActiveRecord::Base.connection.execute(sql)
+  end
+
+  describe "[user_id, normalized_name] の一意制約" do
+    it "プリセット同士（user_id が NULL）の同名を DB が拒否する" do
+      insert_exercise(user_id: nil, normalized_name: "ベンチプレス")
+
+      expect {
+        insert_exercise(user_id: nil, normalized_name: "ベンチプレス")
+      }.to raise_error(ActiveRecord::RecordNotUnique)
+    end
+
+    it "同一ユーザー内の同名を DB が拒否する" do
+      user = create(:user)
+      insert_exercise(user_id: user.id, normalized_name: "マイ種目")
+
+      expect {
+        insert_exercise(user_id: user.id, normalized_name: "マイ種目")
+      }.to raise_error(ActiveRecord::RecordNotUnique)
+    end
+
+    it "ユーザーが異なれば同名を登録できる" do
+      user_a = create(:user)
+      user_b = create(:user)
+      insert_exercise(user_id: user_a.id, normalized_name: "マイ種目")
+
+      expect {
+        insert_exercise(user_id: user_b.id, normalized_name: "マイ種目")
+      }.not_to raise_error
+    end
+
+    it "プリセットと同名のユーザー独自種目を登録できる" do
+      user = create(:user)
+      insert_exercise(user_id: nil, normalized_name: "ベンチプレス")
+
+      expect {
+        insert_exercise(user_id: user.id, normalized_name: "ベンチプレス")
+      }.not_to raise_error
+    end
+  end
+
+  describe "カラム定義" do
+    it "bodyweight の既定値が false である" do
+      insert_exercise(user_id: nil, normalized_name: "ベンチプレス")
+
+      row = ActiveRecord::Base.connection.select_one(
+        "SELECT bodyweight, category FROM exercises WHERE normalized_name = 'ベンチプレス'"
+      )
+      expect(row["bodyweight"]).to be(false)
+      expect(row["category"]).to be_nil
+    end
+
+    it "name が NULL の行を DB が拒否する" do
+      expect {
+        insert_exercise(user_id: nil, name: nil, normalized_name: "ベンチプレス")
+      }.to raise_error(ActiveRecord::NotNullViolation)
+    end
+
+    it "normalized_name が NULL の行を DB が拒否する" do
+      expect {
+        insert_exercise(user_id: nil, normalized_name: nil)
+      }.to raise_error(ActiveRecord::NotNullViolation)
+    end
+
+    it "存在しない user_id の行を DB が拒否する" do
+      expect {
+        insert_exercise(user_id: 0, normalized_name: "マイ種目")
+      }.to raise_error(ActiveRecord::InvalidForeignKey)
+    end
+  end
+end
