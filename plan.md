@@ -73,10 +73,15 @@
     - **内部の空白は保持する**。仕様が定めるのは「前後空白の除去」のみであるため（`ベンチ プレス` はそのまま）
     - **ゼロ幅文字の除去を追加し、仕様書 4.3.1(1) にも反映（版 2.2）**。`strip` が全角空白を落とせないという指摘を受けて全空白文字を実測した結果、U+200B〜U+200D / U+2060 / U+FEFF が NFKC でも `strip` でも残ることが判明した。混入しても目視できず「見た目が同じなのに一致しない種目」を生むため、正規化段階で落とす
     - **適用順序に依存する**: 全角空白は NFKC が U+0020 に畳むため `strip` で足りる（NFKC を先に通さないと残る）。ゼロ幅文字は先頭にあると `strip` がそこで止まるため `strip` より先に除去する。この依存関係は仕様書とコードのコメント双方に明記した
-- [ ] 3.4 Exercise モデルの実装
-  - 実施内容: バリデーション、保存時の normalized_name 自動設定、プリセット/独自のスコープ、「使用中の記録がある種目は削除不可」（仕様書 4.3）を実装する
+- [x] 3.4 Exercise モデルの実装
+  - 実施内容: バリデーション、保存時の normalized_name 自動設定、プリセット/独自のスコープを実装する
   - 対象: `app/models/exercise.rb` / テスト種別: model spec
-  - 完了条件: model spec（正規化の自動設定・削除制限・一意性）が通る
+  - 完了条件: model spec（正規化の自動設定・一意性）が通る
+  - 変更（2026-08-12・ユーザー承認）: **「使用中の記録がある種目は削除不可」（仕様書 4.3）を 4.3 へ移動**。判定対象の `workout_sets` が 4.2 で作成されるため、本項目の時点では実装もテストもできない。削除制限は Exercise と WorkoutSet の関連に属する振る舞いであり、両モデルが揃う 4.3 で実装するのが責務として自然
+  - 実施結果（2026-08-12）: `app/models/exercise.rb`・`spec/models/exercise_spec.rb`（13 examples）・`spec/factories/exercises.rb` を追加
+    - スコープは `preset` / `owned_by(user)` / `available_for(user)` の3つ。`available_for` は「プリセット＋自分の種目」を返し、4.3.1 の照合フロー（ユーザー独自種目 → 共通プリセットの順）で使う想定
+    - **一意性エラーは `:name` に付ける**。照合は `normalized_name` で行うが、利用者が入力するのは `name` であり、内部用の列にエラーを付けると画面に出ない。`validates :normalized_name, uniqueness:` では `:normalized_name` に付くため、独自バリデーションで `:name` に付け替えた
+    - モデル検証と DB 制約の二層が効いていることを実 DB で確認（`invalid` かつ `validate: false` では `RecordNotUnique`）
 - [ ] 3.5 プリセット種目の seed 投入
   - 実施内容: 3.1 の一覧を `db/seeds.rb`（または seed 用ファイル）で投入する
   - 完了条件: `bin/rails db:seed` が冪等に実行でき（再実行で重複しない）、件数が一覧と一致する
@@ -92,7 +97,7 @@
   - 対象: `workout_sets` テーブル
   - 完了条件: マイグレーション成功。同一 workout×種目×set_number の重複が DB で拒否されることをテストで確認
 - [ ] 4.3 Workout / WorkoutSet モデルの実装
-  - 実施内容: 関連・バリデーション（数値制約、自重種目の weight NULL 許容）・factory を実装する
+  - 実施内容: 関連・バリデーション（数値制約、自重種目の weight NULL 許容）・factory を実装する。あわせて**「使用中の記録がある種目は削除不可」（仕様書 4.3）を Exercise 側に実装する**（3.4 から移動。2026-08-12・ユーザー承認）
   - 対象: `app/models/workout.rb` `app/models/workout_set.rb` / テスト種別: model spec
   - 完了条件: model spec が通る
 - [ ] 4.4 セット採番と競合対策の実装
