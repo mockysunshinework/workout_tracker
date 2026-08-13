@@ -4,7 +4,7 @@
 
 - 対象リポジトリ: `workout_tracker`（Public / ソロ開発）
 - 目的: 現場デファクトの「ブランチ → PR → CI green → main マージ」の型で開発する
-- 版: 1.5（2026-08-07 改訂。初版 2026-07-28）
+- 版: 1.6（2026-08-13 改訂。初版 2026-07-28）
 
 ---
 
@@ -192,7 +192,8 @@ git pull origin main
 
 「CI green を必須」を実効化するため、現状の CI（`scan_ruby` / `scan_js` / `lint`）に **RSpec を実行する `test` ジョブ**を追加する。
 
-- PostgreSQL を service コンテナで起動し、`db:prepare` 後に `bundle exec rspec` を実行する。
+- PostgreSQL を service コンテナで起動し、`db:test:prepare` 後に `bundle exec rspec` を実行する。
+  - `db:prepare` を使わないこと。DB 新規作成時に seed も実行されるため、テスト DB にプリセットが混入し、空の DB を前提とする spec が落ちる（PR #29 で発生）。`db:test:prepare` は schema のみロードし seed を実行しない。
 - 追加後、必須ステータスチェックに `test` を登録する（5.1）。
 - ジョブ定義の参考は付録A。
 
@@ -297,7 +298,7 @@ git pull origin main
           bundler-cache: true
 
       - name: Prepare test database
-        run: bin/rails db:prepare
+        run: bin/rails db:test:prepare
 
       - name: Run tests
         run: bundle exec rspec
@@ -324,6 +325,7 @@ git pull origin main
 
 ## 変更履歴
 
+- 1.6（2026-08-13）: 8章・付録A の test ジョブを `db:prepare` から `db:test:prepare` に変更（実 `ci.yml` の変更に追従）。`db:prepare` は DB 新規作成時に seed を実行するため、テスト DB へのプリセット混入で spec が落ちる問題が PR #29 で発生した。
 - 1.5（2026-08-07）: 7.2 に自動レビューの運用注意を追記。スキップされても success で終わること、再レビューは close → reopen で行うこと、`@claude` メンションは質問用途に限ることを明記。
 - 1.4（2026-08-04）: PR 自動レビューの導入に伴い、7.1 に確認工程（6b）、7.2 に運用ルール4項目、9章に dependabot PR が自動レビュー対象外である旨、11章に `docs/pr-review-automation.md` への参照を追加。
 - 1.3（2026-07-28）: 付録A の CI テストジョブ例を実環境に整合（`DATABASE_URL: postgres://postgres:postgres` を廃し、`POSTGRES_USER=workout_tracker`／`DB_USERNAME`・`DB_PASSWORD` を実 `database.yml`・`compose.yaml` に合わせた）。実 `ci.yml` の `test` ジョブと一致。
