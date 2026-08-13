@@ -92,10 +92,13 @@
 
 ## 4. 記録モデル（F-05 データ層）
 
-- [ ] 4.1 workouts テーブルの作成
+- [x] 4.1 workouts テーブルの作成
   - 実施内容: 仕様書 4.5 の定義でマイグレーション作成（user_id FK NOT NULL、performed_on、note、unique index `[user_id, performed_on]`）
   - 対象: `workouts` テーブル
   - 完了条件: マイグレーション成功。同一ユーザー同一日の 2 件目が DB で拒否されることをテストで確認
+  - 実施結果（2026-08-13）: `db/migrate/20260813025641_create_workouts.rb` を作成。Workout モデルは 4.3 の作業のため、3.2 と同方針で DB 制約を生 SQL で直接検証する `spec/db/workouts_table_spec.rb`（8 examples）を追加
+    - 一意制約（同一ユーザー同一日の拒否・別日/別ユーザーの許可）、user_id / performed_on の NOT NULL、FK 違反、note の NULL 可を検証
+    - `t.references :user` は `index: false`（複合 index が先頭列でカバーするため単独 index は作らない。3.2 と同判断）
 - [ ] 4.2 workout_sets テーブルの作成
   - 実施内容: 仕様書 4.5 の定義でマイグレーション作成（weight_kg decimal(5,1) NULL 可・>= 0、reps > 0、set_number > 0、unique index `[workout_id, exercise_id, set_number]`、index `[exercise_id]`）
   - 対象: `workout_sets` テーブル
