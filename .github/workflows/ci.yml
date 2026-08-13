@@ -98,7 +98,9 @@ jobs:
           bundler-cache: true
 
       - name: Prepare test database
-        run: bin/rails db:prepare
+        # db:prepare seeds the database it creates; the test DB must stay
+        # unseeded so specs control their own data (db:test:prepare never seeds)
+        run: bin/rails db:test:prepare
 
       - name: Run tests
         run: bundle exec rspec
