@@ -82,9 +82,13 @@
     - スコープは `preset` / `owned_by(user)` / `available_for(user)` の3つ。`available_for` は「プリセット＋自分の種目」を返し、4.3.1 の照合フロー（ユーザー独自種目 → 共通プリセットの順）で使う想定
     - **一意性エラーは `:name` に付ける**。照合は `normalized_name` で行うが、利用者が入力するのは `name` であり、内部用の列にエラーを付けると画面に出ない。`validates :normalized_name, uniqueness:` では `:normalized_name` に付くため、独自バリデーションで `:name` に付け替えた
     - モデル検証と DB 制約の二層が効いていることを実 DB で確認（`invalid` かつ `validate: false` では `RecordNotUnique`）
-- [ ] 3.5 プリセット種目の seed 投入
+- [x] 3.5 プリセット種目の seed 投入
   - 実施内容: 3.1 の一覧を `db/seeds.rb`（または seed 用ファイル）で投入する
   - 完了条件: `bin/rails db:seed` が冪等に実行でき（再実行で重複しない）、件数が一覧と一致する
+  - 決定（2026-08-12・ユーザー承認）: **冪等性は「追加のみ」（`find_or_create_by!`）で担保する**。upsert 案は、同一視のキーが `normalized_name` であるため肝心の名称変更に効かず（キーが変わり新規行になる）、実効的な利点が category / bodyweight の修正に限られる一方、将来プリセット編集機能を入れた際に「ユーザーの変更を seed が黙って戻す」罠になるため不採用。一覧の修正が必要になった場合はマイグレーション等で明示的に行う
+  - 実施結果（2026-08-12）: `db/seeds.rb` に仕様書 4.3.2 の 22 件を直接記述（seed は現状プリセットのみのためファイル分割しない）。`Exercise.preset.find_or_create_by!(name: ...)` で投入し、`normalized_name` はモデルの before_validation に任せる
+    - `spec/db/seeds_spec.rb`（3 examples）: 22 件が仕様の一覧と一致・再実行で件数が変わらない・既存のユーザー独自種目（プリセットと同名を含む）に影響しない
+    - 開発 DB でも `bin/rails db:seed` を 2 回実行し、22 件・6 カテゴリで重複なしを確認
 
 ## 4. 記録モデル（F-05 データ層）
 
