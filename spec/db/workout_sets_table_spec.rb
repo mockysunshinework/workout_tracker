@@ -120,7 +120,7 @@ RSpec.describe "workout_sets テーブル" do
     end
   end
 
-  describe "数値の下限（CHECK 制約）" do
+  describe "数値の範囲（CHECK 制約）" do
     it "weight_kg の負値を DB が拒否する" do
       expect {
         insert_workout_set(workout_id: workout_id, exercise_id: exercise.id, weight_kg: -0.5)
@@ -130,6 +130,18 @@ RSpec.describe "workout_sets テーブル" do
     it "weight_kg の 0 は登録できる（>= 0 の境界値）" do
       expect {
         insert_workout_set(workout_id: workout_id, exercise_id: exercise.id, weight_kg: 0)
+      }.not_to raise_error
+    end
+
+    it "weight_kg の 1000 以上を DB が拒否する（上限は実用上の決め値・SPEC 4.5）" do
+      expect {
+        insert_workout_set(workout_id: workout_id, exercise_id: exercise.id, weight_kg: 1000)
+      }.to raise_error(ActiveRecord::StatementInvalid, /weight_kg/)
+    end
+
+    it "weight_kg の 999.9 は登録できる（< 1000 の境界値）" do
+      expect {
+        insert_workout_set(workout_id: workout_id, exercise_id: exercise.id, weight_kg: 999.9)
       }.not_to raise_error
     end
 

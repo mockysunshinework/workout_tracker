@@ -107,10 +107,20 @@
     - `workout_id` の単独 index は複合 index が先頭列でカバーするため作らない（3.2/4.1 と同判断）。`exercise_id` の単独 index はグラフ集計の結合キーとして仕様どおり作成
     - 複合 unique index は既定の生成名が 63 バイト制限で切り詰められハッシュ付きになるため、`index_workout_sets_on_workout_and_exercise_and_set_number` を明示
     - テスト構造の学び: PostgreSQL は制約違反でトランザクションが中断されるため、DB spec は「1 example につき違反 1 回」で書く（複数違反を 1 example に入れると 2 回目以降が InFailedSqlTransaction になる）
-- [ ] 4.3 Workout / WorkoutSet モデルの実装
+- [x] 4.3 Workout / WorkoutSet モデルの実装
   - 実施内容: 関連・バリデーション（数値制約、自重種目の weight NULL 許容）・factory を実装する。あわせて**「使用中の記録がある種目は削除不可」（仕様書 4.3）を Exercise 側に実装する**（3.4 から移動。2026-08-12・ユーザー承認）
   - 対象: `app/models/workout.rb` `app/models/workout_set.rb` / テスト種別: model spec
   - 完了条件: model spec が通る
+  - 作業分解（tdd-dev 実行管理用）:
+    - [x] Workout モデル（関連・performed_on の検証・factory）
+    - [x] WorkoutSet モデル（関連・数値制約・自重の weight NULL 許容・factory）
+    - [x] Exercise の削除制限（使用中の記録がある種目は削除不可）
+  - 実施結果（2026-08-14）: `app/models/workout.rb`（7 examples）・`app/models/workout_set.rb`（19 examples）・factory 2 件を追加、`Exercise` に削除制限を追加（+2 examples）。DB 制約とモデル検証の二層構成
+    - Workout: `performed_on` の presence ＋ user 内一意。`has_many :workout_sets, dependent: :destroy`（記録は物理削除・仕様書 4.3）。User に `has_many :workouts, dependent: :destroy` を追加
+    - WorkoutSet: reps / set_number は整数・> 0、set_number は workout×種目内で一意。weight_kg は >= 0 かつ < 1000 で `allow_nil`、**NULL の可否は種目の bodyweight で決まるため独自検証**（`bodyweight: false` なら必須。true でも入力可）
+  - レビュー指摘に対応（2026-08-14・`@claude` メンションレビュー）: 上限 < 1000 を「decimal(5,1) に整合」と説明していたが**誤り**（decimal(5,1) の格納上限は 9999.9。整数部は precision - scale = 4 桁）。上限は「実用上の決め値」と訂正し、モデル単層だった上限を **DB CHECK 制約（`workout_sets_weight_kg_upper_bound`）を追加して二層に統一**。仕様書 4.5 にも上限を追記（版 2.3）
+    - Exercise: `has_many :workout_sets, dependent: :restrict_with_error`。使用中は `destroy` が false を返しエラーが付く（実装前は DB FK の InvalidForeignKey 例外が生で出ることを RED で確認）
+    - 一意性エラーは属性（`:performed_on` / `:set_number`）に付く標準動作のまま。normalized_name（3.4）のような内部列ではなく利用者が入力する属性のため付け替え不要
 - [ ] 4.4 セット採番と競合対策の実装
   - 実施内容: 「同一 workout×種目の最大 set_number の次から採番」（仕様書 4.5。例: 1,2,3 の後の追記は 4,5）を実装する。並行入力対策（workout 行ロック `SELECT FOR UPDATE` か一意制約違反リトライか）をここで決定して実装する
   - 完了条件: 追記採番の spec、および並行（または制約違反経路）の spec が通る
