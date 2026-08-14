@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_13_025641) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_13_041102) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -38,6 +38,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_025641) do
     t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true
   end
 
+  create_table "workout_sets", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "exercise_id", null: false
+    t.integer "reps", null: false
+    t.integer "set_number", null: false
+    t.datetime "updated_at", null: false
+    t.decimal "weight_kg", precision: 5, scale: 1
+    t.bigint "workout_id", null: false
+    t.index ["exercise_id"], name: "index_workout_sets_on_exercise_id"
+    t.index ["workout_id", "exercise_id", "set_number"], name: "index_workout_sets_on_workout_and_exercise_and_set_number", unique: true
+    t.check_constraint "reps > 0", name: "workout_sets_reps_positive"
+    t.check_constraint "set_number > 0", name: "workout_sets_set_number_positive"
+    t.check_constraint "weight_kg >= 0::numeric", name: "workout_sets_weight_kg_non_negative"
+  end
+
   create_table "workouts", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.text "note"
@@ -48,5 +63,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_025641) do
   end
 
   add_foreign_key "exercises", "users"
+  add_foreign_key "workout_sets", "exercises"
+  add_foreign_key "workout_sets", "workouts"
   add_foreign_key "workouts", "users"
 end
