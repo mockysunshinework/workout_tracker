@@ -1,6 +1,8 @@
 class Exercise < ApplicationRecord
   # user_id が NULL の行は共通プリセット（SPEC 4.5）
   belongs_to :user, optional: true
+  # 使用中の記録がある種目は削除不可（SPEC 4.3）。DB の FK 制約と二層で担保する。
+  has_many :workout_sets, dependent: :restrict_with_error
 
   scope :preset, -> { where(user_id: nil) }
   scope :owned_by, ->(user) { where(user: user) }

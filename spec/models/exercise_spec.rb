@@ -87,4 +87,22 @@ RSpec.describe Exercise, type: :model do
       expect(described_class.available_for(user)).to contain_exactly(mine, preset)
     end
   end
+
+  describe "削除制限（使用中の記録がある種目は削除不可・SPEC 4.3）" do
+    it "workout_sets で使用中の種目は destroy できず、レコードが残る" do
+      exercise = create(:exercise)
+      create(:workout_set, exercise: exercise)
+
+      expect(exercise.destroy).to be false
+      expect(exercise.errors[:base]).to be_present
+      expect(described_class.exists?(exercise.id)).to be true
+    end
+
+    it "使用されていない種目は destroy できる" do
+      exercise = create(:exercise)
+
+      expect(exercise.destroy).to be_truthy
+      expect(described_class.exists?(exercise.id)).to be false
+    end
+  end
 end
