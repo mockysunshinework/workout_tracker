@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_13_041102) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_14_071703) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -50,6 +50,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_041102) do
     t.index ["workout_id", "exercise_id", "set_number"], name: "index_workout_sets_on_workout_and_exercise_and_set_number", unique: true
     t.check_constraint "reps > 0", name: "workout_sets_reps_positive"
     t.check_constraint "set_number > 0", name: "workout_sets_set_number_positive"
+    t.check_constraint "weight_kg < 1000::numeric", name: "workout_sets_weight_kg_upper_bound"
     t.check_constraint "weight_kg >= 0::numeric", name: "workout_sets_weight_kg_non_negative"
   end
 

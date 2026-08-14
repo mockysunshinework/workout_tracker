@@ -117,7 +117,8 @@
     - [x] Exercise の削除制限（使用中の記録がある種目は削除不可）
   - 実施結果（2026-08-14）: `app/models/workout.rb`（7 examples）・`app/models/workout_set.rb`（19 examples）・factory 2 件を追加、`Exercise` に削除制限を追加（+2 examples）。DB 制約とモデル検証の二層構成
     - Workout: `performed_on` の presence ＋ user 内一意。`has_many :workout_sets, dependent: :destroy`（記録は物理削除・仕様書 4.3）。User に `has_many :workouts, dependent: :destroy` を追加
-    - WorkoutSet: reps / set_number は整数・> 0、set_number は workout×種目内で一意。weight_kg は >= 0 かつ < 1000（decimal(5,1) の上限に整合）で `allow_nil`、**NULL の可否は種目の bodyweight で決まるため独自検証**（`bodyweight: false` なら必須。true でも入力可）
+    - WorkoutSet: reps / set_number は整数・> 0、set_number は workout×種目内で一意。weight_kg は >= 0 かつ < 1000 で `allow_nil`、**NULL の可否は種目の bodyweight で決まるため独自検証**（`bodyweight: false` なら必須。true でも入力可）
+  - レビュー指摘に対応（2026-08-14・`@claude` メンションレビュー）: 上限 < 1000 を「decimal(5,1) に整合」と説明していたが**誤り**（decimal(5,1) の格納上限は 9999.9。整数部は precision - scale = 4 桁）。上限は「実用上の決め値」と訂正し、モデル単層だった上限を **DB CHECK 制約（`workout_sets_weight_kg_upper_bound`）を追加して二層に統一**。仕様書 4.5 にも上限を追記（版 2.3）
     - Exercise: `has_many :workout_sets, dependent: :restrict_with_error`。使用中は `destroy` が false を返しエラーが付く（実装前は DB FK の InvalidForeignKey 例外が生で出ることを RED で確認）
     - 一意性エラーは属性（`:performed_on` / `:set_number`）に付く標準動作のまま。normalized_name（3.4）のような内部列ではなく利用者が入力する属性のため付け替え不要
 - [ ] 4.4 セット採番と競合対策の実装

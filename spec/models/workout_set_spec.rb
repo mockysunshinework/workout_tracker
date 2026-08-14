@@ -93,11 +93,11 @@ RSpec.describe WorkoutSet, type: :model do
       expect(build(:workout_set, weight_kg: 0)).to be_valid
     end
 
-    it "1000 以上は無効（decimal(5,1) の上限）" do
+    it "1000 以上は無効（上限は実用上の決め値・DB CHECK と二層）" do
       expect(build(:workout_set, weight_kg: 1000)).to be_invalid
     end
 
-    it "999.9 は有効（decimal(5,1) の上限境界値）" do
+    it "999.9 は有効（< 1000 の境界値）" do
       expect(build(:workout_set, weight_kg: 999.9)).to be_valid
     end
   end
