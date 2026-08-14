@@ -99,10 +99,14 @@
   - 実施結果（2026-08-13）: `db/migrate/20260813025641_create_workouts.rb` を作成。Workout モデルは 4.3 の作業のため、3.2 と同方針で DB 制約を生 SQL で直接検証する `spec/db/workouts_table_spec.rb`（8 examples）を追加
     - 一意制約（同一ユーザー同一日の拒否・別日/別ユーザーの許可）、user_id / performed_on の NOT NULL、FK 違反、note の NULL 可を検証
     - `t.references :user` は `index: false`（複合 index が先頭列でカバーするため単独 index は作らない。3.2 と同判断）
-- [ ] 4.2 workout_sets テーブルの作成
+- [x] 4.2 workout_sets テーブルの作成
   - 実施内容: 仕様書 4.5 の定義でマイグレーション作成（weight_kg decimal(5,1) NULL 可・>= 0、reps > 0、set_number > 0、unique index `[workout_id, exercise_id, set_number]`、index `[exercise_id]`）
   - 対象: `workout_sets` テーブル
   - 完了条件: マイグレーション成功。同一 workout×種目×set_number の重複が DB で拒否されることをテストで確認
+  - 実施結果（2026-08-13）: `db/migrate/20260813041102_create_workout_sets.rb` を作成。数値の下限（weight_kg >= 0 / reps > 0 / set_number > 0）は DB の CHECK 制約として実装（モデル側のバリデーションは 4.3 で重ねる二層構成）。`spec/db/workout_sets_table_spec.rb`（15 examples）で一意制約・NOT NULL・FK・CHECK・weight_kg の NULL 可と境界値 0 を検証
+    - `workout_id` の単独 index は複合 index が先頭列でカバーするため作らない（3.2/4.1 と同判断）。`exercise_id` の単独 index はグラフ集計の結合キーとして仕様どおり作成
+    - 複合 unique index は既定の生成名が 63 バイト制限で切り詰められハッシュ付きになるため、`index_workout_sets_on_workout_and_exercise_and_set_number` を明示
+    - テスト構造の学び: PostgreSQL は制約違反でトランザクションが中断されるため、DB spec は「1 example につき違反 1 回」で書く（複数違反を 1 example に入れると 2 回目以降が InFailedSqlTransaction になる）
 - [ ] 4.3 Workout / WorkoutSet モデルの実装
   - 実施内容: 関連・バリデーション（数値制約、自重種目の weight NULL 許容）・factory を実装する。あわせて**「使用中の記録がある種目は削除不可」（仕様書 4.3）を Exercise 側に実装する**（3.4 から移動。2026-08-12・ユーザー承認）
   - 対象: `app/models/workout.rb` `app/models/workout_set.rb` / テスト種別: model spec
