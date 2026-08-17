@@ -121,9 +121,14 @@
   - レビュー指摘に対応（2026-08-14・`@claude` メンションレビュー）: 上限 < 1000 を「decimal(5,1) に整合」と説明していたが**誤り**（decimal(5,1) の格納上限は 9999.9。整数部は precision - scale = 4 桁）。上限は「実用上の決め値」と訂正し、モデル単層だった上限を **DB CHECK 制約（`workout_sets_weight_kg_upper_bound`）を追加して二層に統一**。仕様書 4.5 にも上限を追記（版 2.3）
     - Exercise: `has_many :workout_sets, dependent: :restrict_with_error`。使用中は `destroy` が false を返しエラーが付く（実装前は DB FK の InvalidForeignKey 例外が生で出ることを RED で確認）
     - 一意性エラーは属性（`:performed_on` / `:set_number`）に付く標準動作のまま。normalized_name（3.4）のような内部列ではなく利用者が入力する属性のため付け替え不要
-- [ ] 4.4 セット採番と競合対策の実装
+- [x] 4.4 セット採番と競合対策の実装
   - 実施内容: 「同一 workout×種目の最大 set_number の次から採番」（仕様書 4.5。例: 1,2,3 の後の追記は 4,5）を実装する。並行入力対策（workout 行ロック `SELECT FOR UPDATE` か一意制約違反リトライか）をここで決定して実装する
   - 完了条件: 追記採番の spec、および並行（または制約違反経路）の spec が通る
+  - 決定（2026-08-14・ユーザー承認）: **workout 行ロック（`with_lock` = `SELECT FOR UPDATE`）を採用**。制約違反リトライは、PostgreSQL では制約違反でトランザクションが中断されるため savepoint か全体やり直しが必要になり複雑（4.2 のテストで確認済みの挙動）。行ロックは実装が一本道で読みやすく、LINE の複数行一括保存（仕様書 4.2.3。部分保存しない）とも相性がよい。本アプリの競合は同一ユーザーの LINE と Web 程度でロックのコストは無視できる
+  - 実施結果（2026-08-14）: `Workout#append_set(exercise:, **attributes)` を実装。ロック → 種目内の最大 set_number ＋ 1 → create の順。バリデーションエラー時は未保存のレコード（エラー付き）を返す
+    - `spec/models/workout_spec.rb` に採番の spec 6 examples（初回 1 / 1,2,3 の後は 4,5 / 種目・workout ごとに独立 / 歯抜け 1,3 の次は 4（「最大の次」の仕様を明文化）/ エラー時未保存）
+    - `spec/models/workout_append_set_concurrency_spec.rb`（1 example）: **実コミット＋2 スレッドで並行実行**し、set_number が [1, 2] になることを検証（トランザクショナルテストでは別接続からデータが見えないため、このファイルのみ `use_transactional_tests = false`）
+    - **テストの検証能力を mutation で確認**: `with_lock` を外すと並行 spec が失敗（RecordNotUnique）することを実際に確認してから戻した
 - [ ] 4.5 セット削除時の繰り上げ処理の実装
   - 実施内容: 中間セット削除時に後続の set_number を同一トランザクションで繰り上げ、歯抜けを作らない（仕様書 4.5。小さい番号から順に更新）
   - 完了条件: 「1,2,3 から 2 を削除 → 1,2 に詰まる」spec が通る
