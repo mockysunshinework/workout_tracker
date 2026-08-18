@@ -12,7 +12,8 @@ class Workout < ApplicationRecord
   def append_set(exercise:, **attributes)
     with_lock do
       next_number = workout_sets.where(exercise: exercise).maximum(:set_number).to_i + 1
-      workout_sets.create(exercise: exercise, set_number: next_number, **attributes)
+      # 自動採番を後置し、attributes に set_number が紛れても上書きされないようにする
+      workout_sets.create(**attributes, exercise: exercise, set_number: next_number)
     end
   end
 end

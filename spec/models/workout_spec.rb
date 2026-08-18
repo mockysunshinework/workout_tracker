@@ -104,6 +104,14 @@ RSpec.describe Workout, type: :model do
       expect(set.set_number).to eq 4
     end
 
+    it "attributes で set_number を渡しても自動採番が優先される" do
+      create(:workout_set, workout: workout, exercise: exercise, set_number: 1)
+
+      set = workout.append_set(exercise: exercise, reps: 10, weight_kg: 60.0, set_number: 99)
+
+      expect(set.set_number).to eq 2
+    end
+
     it "バリデーションエラー時は保存せず、エラー付きのレコードを返す" do
       barbell = create(:exercise, user: user, bodyweight: false)
 
