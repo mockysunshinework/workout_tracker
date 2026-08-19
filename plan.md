@@ -136,6 +136,7 @@
   - 実施結果（2026-08-18）: `Workout#remove_set(workout_set)` を実装。`with_lock` 内で destroy! → 同一 workout×種目の後続を小さい番号から順に -1 更新。採番（`append_set`）と同じ行ロックで直列化されるため、削除と追記の並行実行でも整合が保たれる
     - spec 6 examples: 完了条件の「1,2,3 から 2 削除 → 1,2」（id 追跡で旧 3 が 2 になることまで検証）/ 先頭・末尾削除 / 物理削除 / 別種目に影響なし / **繰り上げ失敗時に削除もロールバック**（update! を強制失敗させ同一トランザクション性を検証）
   - 4 章完了時のセキュリティチェック（2026-08-18）: bundler-audit（脆弱性なし）/ bundle check（整合）/ Brakeman（警告なし）/ 差分への秘密情報混入なし。全体テスト 127 examples green・RuboCop no offenses
+  - レビュー指摘に対応（2026-08-19・`@claude` メンションレビュー）: (1) `remove_set` に**所属ガード**を追加（別 workout のセットを渡すと ArgumentError。従来は渡されたセットを削除しつつ繰り上げは自 workout 側で走る歪んだ挙動で、途中の RecordInvalid で止まるだけだった）。(2) spec の `_first`（未使用接頭辞なのに使用していた）を `first` にリネーム
 
 ## 5. Web 記録管理（F-05 / F-06 画面）
 

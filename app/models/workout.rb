@@ -21,6 +21,10 @@ class Workout < ApplicationRecord
   # 削除と繰り上げは同一トランザクションで行い、採番（append_set）と同じ行ロックで直列化する。
   # 繰り上げは小さい番号から順に更新するため、空いた枠に詰める形になり一意制約と衝突しない。
   def remove_set(workout_set)
+    unless workout_set.workout_id == id
+      raise ArgumentError, "workout_set does not belong to this workout"
+    end
+
     with_lock do
       workout_set.destroy!
       followers = workout_sets.where(exercise_id: workout_set.exercise_id)

@@ -144,9 +144,9 @@ RSpec.describe Workout, type: :model do
     end
 
     it "先頭の 1 を削除すると後続がすべて繰り上がる" do
-      _first, second, third = create_sets(1, 2, 3)
+      first, second, third = create_sets(1, 2, 3)
 
-      workout.remove_set(_first)
+      workout.remove_set(first)
 
       expect(workout.workout_sets.order(:set_number).pluck(:id, :set_number))
         .to eq [ [ second.id, 1 ], [ third.id, 2 ] ]
@@ -177,6 +177,17 @@ RSpec.describe Workout, type: :model do
       workout.remove_set(target)
 
       expect(other_set.reload.set_number).to eq 2
+    end
+
+    it "別 workout のセットを渡すと ArgumentError になり、何も変更されない" do
+      other_workout = create(:workout, user: user)
+      foreign_set = create(:workout_set, workout: other_workout, exercise: exercise, set_number: 1)
+      create_sets(1, 2)
+
+      expect { workout.remove_set(foreign_set) }.to raise_error(ArgumentError)
+
+      expect(WorkoutSet.exists?(foreign_set.id)).to be true
+      expect(workout.workout_sets.order(:set_number).pluck(:set_number)).to eq [ 1, 2 ]
     end
 
     it "繰り上げに失敗した場合は削除もロールバックされる（同一トランザクション）" do
