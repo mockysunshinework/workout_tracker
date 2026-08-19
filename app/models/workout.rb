@@ -16,4 +16,18 @@ class Workout < ApplicationRecord
       workout_sets.create(**attributes, exercise: exercise, set_number: next_number)
     end
   end
+
+  # セット削除時に同一 workout×種目の後続セットを繰り上げ、歯抜けを作らない（SPEC 4.5）。
+  # 削除と繰り上げは同一トランザクションで行い、採番（append_set）と同じ行ロックで直列化する。
+  # 繰り上げは小さい番号から順に更新するため、空いた枠に詰める形になり一意制約と衝突しない。
+  def remove_set(workout_set)
+    with_lock do
+      workout_set.destroy!
+      followers = workout_sets.where(exercise_id: workout_set.exercise_id)
+                              .where(set_number: (workout_set.set_number + 1)..)
+                              .order(:set_number)
+      followers.each { |set| set.update!(set_number: set.set_number - 1) }
+      workout_set
+    end
+  end
 end

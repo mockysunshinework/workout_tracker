@@ -122,4 +122,73 @@ RSpec.describe Workout, type: :model do
       expect(workout.workout_sets.count).to eq 0
     end
   end
+
+  describe "#remove_set（削除時の繰り上げ・SPEC 4.5）" do
+    let(:user) { create(:user) }
+    let(:workout) { create(:workout, user: user) }
+    let(:exercise) { create(:exercise, user: user) }
+
+    def create_sets(*numbers)
+      numbers.map do |n|
+        create(:workout_set, workout: workout, exercise: exercise, set_number: n)
+      end
+    end
+
+    it "1,2,3 から 2 を削除すると 1,2 に詰まる（完了条件の例）" do
+      first, second, third = create_sets(1, 2, 3)
+
+      workout.remove_set(second)
+
+      expect(workout.workout_sets.order(:set_number).pluck(:id, :set_number))
+        .to eq [ [ first.id, 1 ], [ third.id, 2 ] ]
+    end
+
+    it "先頭の 1 を削除すると後続がすべて繰り上がる" do
+      _first, second, third = create_sets(1, 2, 3)
+
+      workout.remove_set(_first)
+
+      expect(workout.workout_sets.order(:set_number).pluck(:id, :set_number))
+        .to eq [ [ second.id, 1 ], [ third.id, 2 ] ]
+    end
+
+    it "末尾の 3 を削除しても他のセットは変わらない" do
+      first, second, third = create_sets(1, 2, 3)
+
+      workout.remove_set(third)
+
+      expect(workout.workout_sets.order(:set_number).pluck(:id, :set_number))
+        .to eq [ [ first.id, 1 ], [ second.id, 2 ] ]
+    end
+
+    it "削除対象のレコードは物理削除される" do
+      set, = create_sets(1)
+
+      workout.remove_set(set)
+
+      expect(WorkoutSet.exists?(set.id)).to be false
+    end
+
+    it "別種目のセットには影響しない" do
+      other_exercise = create(:exercise, user: user)
+      other_set = create(:workout_set, workout: workout, exercise: other_exercise, set_number: 2)
+      target, = create_sets(1)
+
+      workout.remove_set(target)
+
+      expect(other_set.reload.set_number).to eq 2
+    end
+
+    it "繰り上げに失敗した場合は削除もロールバックされる（同一トランザクション）" do
+      _first, second, third = create_sets(1, 2, 3)
+      allow_any_instance_of(WorkoutSet)
+        .to receive(:update!).and_raise(ActiveRecord::RecordInvalid)
+
+      expect { workout.remove_set(second) }.to raise_error(ActiveRecord::RecordInvalid)
+
+      expect(workout.workout_sets.order(:set_number).pluck(:set_number)).to eq [ 1, 2, 3 ]
+      expect(WorkoutSet.exists?(second.id)).to be true
+      expect(third.reload.set_number).to eq 3
+    end
+  end
 end
