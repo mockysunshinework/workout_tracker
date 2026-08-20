@@ -149,10 +149,14 @@
     - `spec/requests/workouts_spec.rb`（4 examples）: 未ログイン→ログイン画面へリダイレクト / 自分の workout は 200 / 他ユーザーの workout は 404 / 存在しない id も 404（存在有無を区別させない）
     - `/up` ヘルスチェックは `ApplicationController` を継承しないため認証必須の対象外（影響なし）
     - Brakeman 実行（認証まわりの重要変更のため）: 警告なし
-- [ ] 5.2 記録一覧画面
+- [x] 5.2 記録一覧画面
   - 実施内容: 日付降順の一覧（日付・種目数・総セット数）と月フィルタを実装する
   - 対象: ルート `/workouts`（仕様書 4.4 画面 3） / テスト種別: request spec
   - 完了条件: 画面が仕様の表示項目を満たし、spec が通る
+  - 実施結果（2026-08-20）: `workouts#index` を追加。集計は `Workout.with_set_stats` スコープ（LEFT JOIN ＋ GROUP BY で種目数=DISTINCT exercise_id・総セット数を1クエリ取得。行ごとの追加クエリなし）、月絞り込みは `performed_in(month)` スコープ
+    - 月フィルタは `?month=YYYY-MM` の GET パラメータ＋記録が存在する月の select。**不正値・未指定は全件表示**（仕様に記載がないため実装詳細として判断）
+    - `spec/requests/workouts_index_spec.rb`（8 examples）: 未ログイン→リダイレクト / 日付降順 / 日付・種目数・総セット数の表示 / セット0件は 0 表示 / 他ユーザーの記録は非表示 / 月フィルタ（指定・未指定・不正値）
+    - ブラウザでの目視確認は未実施（表示内容は request spec が実ビューの描画結果で検証済み。デザイン調整は Stage 1 では対象外）
 - [ ] 5.3 記録詳細・編集画面
   - 実施内容: セット単位の表示・追加・修正・削除を実装する（削除時は 4.5 の繰り上げが作動）
   - 対象: ルート `/workouts/:id`（仕様書 4.4 画面 4） / テスト種別: request spec

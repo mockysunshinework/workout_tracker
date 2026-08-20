@@ -1,0 +1,27 @@
+<h1>記録一覧</h1>
+
+<%= form_with url: workouts_path, method: :get do |form| %>
+  <%= form.select :month,
+                  options_for_select(@months, params[:month]),
+                  { include_blank: "すべての月" } %>
+  <%= form.submit "絞り込む" %>
+<% end %>
+
+<table>
+  <thead>
+    <tr>
+      <th>日付</th>
+      <th>種目数</th>
+      <th>総セット数</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% @workouts.each do |workout| %>
+      <tr id="<%= dom_id(workout) %>">
+        <td><%= link_to workout.performed_on, workout_path(workout) %></td>
+        <td><%= workout.exercise_count %></td>
+        <td><%= workout.total_set_count %></td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>

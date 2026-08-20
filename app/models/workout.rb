@@ -6,6 +6,16 @@ class Workout < ApplicationRecord
   # 一意性は 1 ユーザー 1 日 1 レコード（SPEC 4.5）。DB の unique index と二層で担保する。
   validates :performed_on, presence: true, uniqueness: { scope: :user_id }
 
+  # 一覧表示用の集計（SPEC 4.4 画面 3: 種目数・総セット数）。行ごとの追加クエリを避ける。
+  scope :with_set_stats, -> {
+    left_joins(:workout_sets)
+      .select("workouts.*",
+              "COUNT(DISTINCT workout_sets.exercise_id) AS exercise_count",
+              "COUNT(workout_sets.id) AS total_set_count")
+      .group(:id)
+  }
+  scope :performed_in, ->(month) { where(performed_on: month.all_month) }
+
   # 同一 workout×種目の最大 set_number の次を振って追記する（SPEC 4.5。例: 1,2,3 の後は 4,5）。
   # 並行入力（LINE と Web 等）とは workout 行の SELECT FOR UPDATE で直列化する
   # （2026-08-14 決定。制約違反リトライ方式は中断トランザクションの回復が複雑なため不採用）。
