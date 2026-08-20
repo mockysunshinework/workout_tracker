@@ -140,10 +140,15 @@
 
 ## 5. Web 記録管理（F-05 / F-06 画面）
 
-- [ ] 5.1 認証必須とユーザー分離の共通基盤
+- [x] 5.1 認証必須とユーザー分離の共通基盤
   - 実施内容: 全画面 `authenticate_user!` 必須（Webhook を除く）、リソースは常に `current_user` 起点で取得する方針をコントローラ共通で実装する（仕様書 2.3 / 8 章）
   - テスト種別: request spec（未ログイン→リダイレクト、他ユーザーの workout 参照→404）
   - 完了条件: 上記 request spec が通る
+  - 実施結果（2026-08-20）: `ApplicationController` に `before_action :authenticate_user!, unless: :devise_controller?` を追加（Devise 画面は認証前に使うため除外。LINE Webhook の除外は 8 章で追加）。`HomeController` の個別宣言は冗長になったため除去
+    - ユーザー分離を検証可能にするため**最小の `WorkoutsController#show`**（`current_user.workouts.find`）とルート `resources :workouts, only: [:show]` を導入。画面の作り込みは 5.3 の仕事
+    - `spec/requests/workouts_spec.rb`（4 examples）: 未ログイン→ログイン画面へリダイレクト / 自分の workout は 200 / 他ユーザーの workout は 404 / 存在しない id も 404（存在有無を区別させない）
+    - `/up` ヘルスチェックは `ApplicationController` を継承しないため認証必須の対象外（影響なし）
+    - Brakeman 実行（認証まわりの重要変更のため）: 警告なし
 - [ ] 5.2 記録一覧画面
   - 実施内容: 日付降順の一覧（日付・種目数・総セット数）と月フィルタを実装する
   - 対象: ルート `/workouts`（仕様書 4.4 画面 3） / テスト種別: request spec

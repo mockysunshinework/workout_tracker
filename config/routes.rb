@@ -13,4 +13,7 @@ Rails.application.routes.draw do
   # Defines the root path route ("/")
   # NOTE: minimal landing for 2.3; replaced by the real dashboard in 6.3
   root "home#index"
+
+  # NOTE: minimal show for 5.1 (auth/user-scoping base); index comes in 5.2, editing in 5.3
+  resources :workouts, only: [ :show ]
 end
