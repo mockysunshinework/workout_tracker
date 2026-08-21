@@ -1,2 +1,46 @@
-<%# 5.1 時点の最小表示。詳細・編集画面は 5.3 で実装する %>
 <h1><%= @workout.performed_on %></h1>
+
+<p><%= link_to "記録一覧へ戻る", workouts_path %></p>
+
+<table>
+  <thead>
+    <tr>
+      <th>種目</th>
+      <th>セット</th>
+      <th>重量(kg)</th>
+      <th>回数</th>
+      <th>修正</th>
+      <th>削除</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% @workout_sets.each do |set| %>
+      <tr id="<%= dom_id(set) %>">
+        <td><%= set.exercise.name %></td>
+        <td><%= set.set_number %></td>
+        <td><%= set.weight_kg %></td>
+        <td><%= set.reps %></td>
+        <td>
+          <%= form_with url: workout_workout_set_path(@workout, set),
+                        method: :patch, scope: :workout_set do |form| %>
+            <%= form.number_field :weight_kg, value: set.weight_kg, step: 0.1, min: 0 %>
+            <%= form.number_field :reps, value: set.reps, min: 1 %>
+            <%= form.submit "更新" %>
+          <% end %>
+        </td>
+        <td>
+          <%= button_to "削除", workout_workout_set_path(@workout, set), method: :delete %>
+        </td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+
+<h2>セットを追加</h2>
+<%= form_with url: workout_workout_sets_path(@workout), scope: :workout_set do |form| %>
+  <%= form.select :exercise_id,
+                  options_from_collection_for_select(@exercises, :id, :name) %>
+  <%= form.number_field :weight_kg, step: 0.1, min: 0, placeholder: "重量(kg)" %>
+  <%= form.number_field :reps, min: 1, placeholder: "回数" %>
+  <%= form.submit "追加" %>
+<% end %>

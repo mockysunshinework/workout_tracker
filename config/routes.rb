@@ -14,6 +14,7 @@ Rails.application.routes.draw do
   # NOTE: minimal landing for 2.3; replaced by the real dashboard in 6.3
   root "home#index"
 
-  # NOTE: editing actions come in 5.3
-  resources :workouts, only: [ :index, :show ]
+  resources :workouts, only: [ :index, :show ] do
+    resources :workout_sets, only: [ :create, :update, :destroy ]
+  end
 end
