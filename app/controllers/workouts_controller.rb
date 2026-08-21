@@ -14,6 +14,10 @@ class WorkoutsController < ApplicationController
     # current_user 起点で取得する（CLAUDE.md セキュリティ方針）。
     # 他ユーザーの id は RecordNotFound → 404 になり、存在有無も区別させない。
     @workout = current_user.workouts.find(params[:id])
+    # 表示順は種目（登録順）→ セット番号。仕様に記載がないため実装詳細として判断
+    @workout_sets = @workout.workout_sets.includes(:exercise).order(:exercise_id, :set_number)
+    # 追加フォームの種目選択肢（プリセット＋自分の種目）
+    @exercises = Exercise.available_for(current_user).order(:id)
   end
 
   private

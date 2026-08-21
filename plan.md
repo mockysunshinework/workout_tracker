@@ -160,10 +160,21 @@
   - レビュー確認（2026-08-20・`@claude` メンションレビュー）: ブロッカーなし・Approve 表明。軽微な所見 2 件は検証の上**修正不要**と判断（PR #40 に記録済み）
     - `@months` の Ruby 側 uniq: 指摘は正確だが、対象は 1 ユーザーの記録日付（年間 365 行程度）で DB 側集約は現時点では過剰。「まずシンプルに」の方針どおり現状維持。記録件数増加で一覧が遅くなった際の改善候補（`date_trunc('month', ...)`）
     - 月セレクトの生 `YYYY-MM` 表示: UI 文言調整は Stage 1 対象外の方針のため対応しない
-- [ ] 5.3 記録詳細・編集画面
+- [x] 5.3 記録詳細・編集画面
   - 実施内容: セット単位の表示・追加・修正・削除を実装する（削除時は 4.5 の繰り上げが作動）
   - 対象: ルート `/workouts/:id`（仕様書 4.4 画面 4） / テスト種別: request spec
   - 完了条件: 追加・修正・削除（繰り上げ含む）が画面から行え、spec が通る
+  - 作業分解（tdd-dev 実行管理用）:
+    - [x] セット一覧の表示（workouts#show の拡張）
+    - [x] セット追加（append_set 経由・種目は available_for に限定）
+    - [x] セット修正（weight_kg / reps のみ）
+    - [x] セット削除（remove_set 経由・繰り上げ）
+  - 実施結果（2026-08-20）: `resources :workout_sets, only: [:create, :update, :destroy]` を workouts 配下にネスト。`WorkoutSetsController` は workout を `current_user.workouts.find` で、種目を `Exercise.available_for(current_user).find` で引く（他ユーザーの workout・種目とも 404）。採番・繰り上げは 4.4/4.5 の `append_set` / `remove_set` をそのまま使用
+    - **セット修正は weight_kg / reps のみ**（`params.expect` で set_number を受け付けない。採番・繰り上げはシステム管理のため。種目の付け替えも連番を壊すため不可）— 仕様に明記がないため実装詳細として判断
+    - バリデーションエラーは詳細画面へ redirect ＋ flash alert（Stage 1 の最小 UI。インラインのエラー表示はデザイン調整時に検討）
+    - spec: `workout_detail_spec.rb`（表示 3 examples）＋ `workout_sets_spec.rb`（追加 5・修正 4・削除 2 examples）。権限分離（他ユーザーの workout・種目・セット）と繰り上げ作動を含む
+    - Brakeman 実行（外部入力を受けるコントローラ追加のため）: 警告なし
+  - レビュー確認（2026-08-21・`@claude` メンションレビュー）: ブロッカーなし・Approve 表明。所見「`params.expect` を 1 回に統合可」は動作同一を確認の上、**現状維持**と判断（分割は `set_params` を update と共有する意図。統合すると `except` 等の加工が増え可読性が落ちる）。PR #41 に記録済み
 - [ ] 5.4 種目管理画面
   - 実施内容: 独自種目の追加・名称変更・削除（使用中は削除不可）、プリセット一覧表示を実装する
   - 対象: ルート `/exercises`（仕様書 4.4 画面 5） / テスト種別: request spec
