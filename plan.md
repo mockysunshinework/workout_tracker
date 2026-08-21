@@ -174,6 +174,7 @@
     - バリデーションエラーは詳細画面へ redirect ＋ flash alert（Stage 1 の最小 UI。インラインのエラー表示はデザイン調整時に検討）
     - spec: `workout_detail_spec.rb`（表示 3 examples）＋ `workout_sets_spec.rb`（追加 5・修正 4・削除 2 examples）。権限分離（他ユーザーの workout・種目・セット）と繰り上げ作動を含む
     - Brakeman 実行（外部入力を受けるコントローラ追加のため）: 警告なし
+  - レビュー確認（2026-08-21・`@claude` メンションレビュー）: ブロッカーなし・Approve 表明。所見「`params.expect` を 1 回に統合可」は動作同一を確認の上、**現状維持**と判断（分割は `set_params` を update と共有する意図。統合すると `except` 等の加工が増え可読性が落ちる）。PR #41 に記録済み
 - [ ] 5.4 種目管理画面
   - 実施内容: 独自種目の追加・名称変更・削除（使用中は削除不可）、プリセット一覧表示を実装する
   - 対象: ルート `/exercises`（仕様書 4.4 画面 5） / テスト種別: request spec
