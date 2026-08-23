@@ -17,4 +17,5 @@ Rails.application.routes.draw do
   resources :workouts, only: [ :index, :show ] do
     resources :workout_sets, only: [ :create, :update, :destroy ]
   end
+  resources :exercises, only: [ :index, :create, :update, :destroy ]
 end

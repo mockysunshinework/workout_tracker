@@ -1,0 +1,58 @@
+<h1>種目管理</h1>
+
+<h2>自分の種目</h2>
+<table>
+  <thead>
+    <tr>
+      <th>種目名</th>
+      <th>カテゴリ</th>
+      <th>自重</th>
+      <th>名称変更</th>
+      <th>削除</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% @my_exercises.each do |exercise| %>
+      <tr id="<%= dom_id(exercise) %>">
+        <td><%= exercise.name %></td>
+        <td><%= exercise.category %></td>
+        <td><%= exercise.bodyweight? ? "自重" : "" %></td>
+        <td>
+          <%= form_with url: exercise_path(exercise), method: :patch, scope: :exercise do |form| %>
+            <%= form.text_field :name, value: exercise.name %>
+            <%= form.submit "変更" %>
+          <% end %>
+        </td>
+        <td><%= button_to "削除", exercise_path(exercise), method: :delete %></td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+
+<h2>種目を追加</h2>
+<%= form_with url: exercises_path, scope: :exercise do |form| %>
+  <%= form.text_field :name, placeholder: "種目名" %>
+  <%= form.text_field :category, placeholder: "カテゴリ（任意）" %>
+  <label><%= form.check_box :bodyweight %> 自重種目（重量入力を省略できる）</label>
+  <%= form.submit "追加" %>
+<% end %>
+
+<h2>プリセット種目</h2>
+<table>
+  <thead>
+    <tr>
+      <th>種目名</th>
+      <th>カテゴリ</th>
+      <th>自重</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% @presets.each do |exercise| %>
+      <tr id="<%= dom_id(exercise) %>">
+        <td><%= exercise.name %></td>
+        <td><%= exercise.category %></td>
+        <td><%= exercise.bodyweight? ? "自重" : "" %></td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
