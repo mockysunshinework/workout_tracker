@@ -31,6 +31,17 @@ RSpec.describe "Workout detail", type: :request do
       expect(row).to include("腕立て伏せ", "1", "", "15")
     end
 
+    it "セットの削除ボタンに確認ダイアログ用の data-turbo-confirm が付与される" do
+      bench = create(:exercise, user: user, name: "ベンチプレス")
+      set = create(:workout_set, workout: workout, exercise: bench, set_number: 1, reps: 10)
+
+      get workout_path(workout)
+
+      # 属性が「削除ボタンに」付いていることまで固定する（行内の別要素では通らない）
+      buttons = response.parsed_body.css("#workout_set_#{set.id} button[data-turbo-confirm]")
+      expect(buttons.map(&:text)).to eq [ "削除" ]
+    end
+
     it "セットは種目ごとにセット番号順で表示される" do
       bench = create(:exercise, user: user, name: "ベンチプレス")
       squat = create(:exercise, user: user, name: "スクワット")

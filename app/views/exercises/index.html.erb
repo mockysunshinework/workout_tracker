@@ -23,7 +23,10 @@
             <%= form.submit "変更" %>
           <% end %>
         </td>
-        <td><%= button_to "削除", exercise_path(exercise), method: :delete %></td>
+        <td>
+          <%= button_to "削除", exercise_path(exercise), method: :delete,
+                        data: { turbo_confirm: "「#{exercise.name}」を削除しますか？" } %>
+        </td>
       </tr>
     <% end %>
   </tbody>

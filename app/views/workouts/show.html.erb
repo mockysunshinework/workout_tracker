@@ -29,7 +29,8 @@
           <% end %>
         </td>
         <td>
-          <%= button_to "削除", workout_workout_set_path(@workout, set), method: :delete %>
+          <%= button_to "削除", workout_workout_set_path(@workout, set), method: :delete,
+                        data: { turbo_confirm: "#{set.exercise.name} のセット#{set.set_number}を削除しますか？" } %>
         </td>
       </tr>
     <% end %>

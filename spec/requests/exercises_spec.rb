@@ -25,6 +25,16 @@ RSpec.describe "Exercises", type: :request do
       expect(response.parsed_body.css("#exercise_#{preset.id}")).to be_present
     end
 
+    it "削除ボタンに確認ダイアログ用の data-turbo-confirm が付与される" do
+      mine = create(:exercise, user: user, name: "マイ種目")
+
+      get exercises_path
+
+      # 属性が「削除ボタンに」付いていることまで固定する（行内の別要素では通らない）
+      buttons = response.parsed_body.css("#exercise_#{mine.id} button[data-turbo-confirm]")
+      expect(buttons.map(&:text)).to eq [ "削除" ]
+    end
+
     it "他ユーザーの独自種目は表示されない" do
       others = create(:exercise, name: "他人の種目")
 
