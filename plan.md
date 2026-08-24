@@ -199,6 +199,7 @@
   - 実施結果（2026-08-23）: `config.i18n.default_locale = :ja`、`config/locales/ja.yml`（models 4 件・attributes: user 6 / exercise 4 / workout 2 / workout_set 4）を追加
     - `spec/requests/japanese_messages_spec.rb`（4 examples）: 種目重複（「種目名〜すでに存在します」・属性名翻訳込み）/ 重量未入力（「重量を入力してください」）/ 使用中種目の削除（「削除できません」）/ Devise ログイン失敗が日本語
     - 既存 spec は全 green のまま（172 examples）。依存追加のため bundler-audit・bundle check 実行済み（問題なし）
+  - レビュー確認（2026-08-24・`@claude` メンションレビュー）: ブロッカーなし・LGTM。所見「`devise.en.yml` が参照されない（削除検討）」は事実として正当（言語切替なし・production の fallbacks 先も :ja）。検討の結果、**未使用の en 系 locale 2 件（`en.yml` / `devise.en.yml`）を削除**（ユーザー判断）。英語文言は Rails 本体・devise gem が同梱しており、削除しても将来の英語対応に支障なし（アプリ固有属性の英訳はどのみち新規作業。`devise.en.yml` は必要になれば `rails g devise:install` で再生成可能）
 - [ ] 5.6 プリセットと同名の独自種目の区別表示
   - 実施内容: 種目セレクト（記録詳細のセット追加フォーム）と種目管理画面で、プリセットと自分の種目を判別できる表示にする（例: 「ベンチプレス（プリセット）」のラベル付け、または optgroup での区分け。方式は着手時に決定）
   - 完了条件: 同名の独自種目が存在してもセレクト・一覧でプリセットかどうか判別できることを spec で確認
