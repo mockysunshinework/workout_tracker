@@ -20,6 +20,10 @@ gem "jbuilder"
 # Authentication [https://github.com/heartcombo/devise]
 gem "devise"
 
+# Japanese locale data for Rails defaults and Devise (5.5)
+gem "rails-i18n"
+gem "devise-i18n"
+
 # Use Active Model has_secure_password [https://guides.rubyonrails.org/active_model_basics.html#securepassword]
 # gem "bcrypt", "~> 3.1.7"
 

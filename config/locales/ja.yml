@@ -1,0 +1,30 @@
+# アプリ固有のモデル名・属性名の日本語。
+# Rails 標準のエラーメッセージは rails-i18n、Devise のメッセージは devise-i18n が提供する。
+ja:
+  activerecord:
+    models:
+      user: ユーザー
+      exercise: 種目
+      workout: トレーニング記録
+      workout_set: セット
+    attributes:
+      user:
+        name: 名前
+        email: メールアドレス
+        password: パスワード
+        password_confirmation: パスワード（確認）
+        current_password: 現在のパスワード
+        remember_me: ログインを記憶する
+      exercise:
+        name: 種目名
+        category: カテゴリ
+        bodyweight: 自重
+        normalized_name: 正規化済み種目名
+      workout:
+        performed_on: 実施日
+        note: メモ
+      workout_set:
+        exercise: 種目
+        weight_kg: 重量
+        reps: 回数
+        set_number: セット番号
