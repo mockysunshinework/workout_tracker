@@ -38,5 +38,8 @@ module WorkoutTracker
 
     # Don't generate system test files.
     config.generators.system_tests = nil
+
+    # 画面のメッセージは日本語で表示する（plan.md 5.5）
+    config.i18n.default_locale = :ja
   end
 end
