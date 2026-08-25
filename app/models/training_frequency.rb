@@ -4,14 +4,16 @@
 module TrainingFrequency
   module_function
 
-  UNITS = %w[week month].freeze
+  # unit ごとの固定 SQL。動的な文字列組み立てをしないことで不正値の混入を構造的に防ぐ。
+  PERIOD_EXPRESSIONS = {
+    week: Arel.sql("date_trunc('week', performed_on)"),
+    month: Arel.sql("date_trunc('month', performed_on)")
+  }.freeze
 
   def counts(user:, unit:, since:)
-    unless UNITS.include?(unit.to_s)
-      raise ArgumentError, "unit must be one of #{UNITS.join(', ')}"
-    end
+    period = PERIOD_EXPRESSIONS[unit.to_sym]
+    raise ArgumentError, "unit must be one of #{PERIOD_EXPRESSIONS.keys.join(', ')}" if period.nil?
 
-    period = Arel.sql("date_trunc('#{unit}', performed_on)")
     rows = user.workouts
       .where(performed_on: since..)
       .group(period)
