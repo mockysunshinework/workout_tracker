@@ -11,10 +11,11 @@ module TrainingFrequency
       raise ArgumentError, "unit must be one of #{UNITS.join(', ')}"
     end
 
+    period = Arel.sql("date_trunc('#{unit}', performed_on)")
     rows = user.workouts
       .where(performed_on: since..)
-      .group(Arel.sql("date_trunc('#{unit}', performed_on)"))
-      .order(Arel.sql("date_trunc('#{unit}', performed_on)"))
+      .group(period)
+      .order(period)
       .count
 
     rows.map { |period_start, days| { period_start: period_start.to_date, days: days } }
