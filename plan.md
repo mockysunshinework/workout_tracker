@@ -221,10 +221,16 @@
     - workouts は 1 ユーザー 1 日 1 レコードのため行数 = 実施日数
   - レビュー確認（2026-08-25・`@claude` メンションレビュー）: ブロッカーなし・Approve 表明。所見「`date_trunc` 式の 2 回生成」は正当のため**ローカル変数 `period` に切り出し**（挙動不変・既存 spec green のまま。tdd-dev のリファクタリング特則を適用）。レビューの検証内容（プリセット種目でも workouts 側でユーザー絞り込み済み・整数除算回避・SQL インジェクションなし）も一次情報と突き合わせて妥当と確認
   - CI 失敗と対応（2026-08-25）: 上記リファクタリングが **Brakeman の SQL Injection 警告（Medium）を誘発し scan_ruby が fail**。補間式を変数に切り出したことでデータフロー解析が検出するようになった（インライン時は非検出）。実際は unit ホワイトリスト済みの誤検知だが、ignore 登録ではなく **`PERIOD_EXPRESSIONS` 定数（unit → 固定 Arel.sql のハッシュ）に変更して補間自体を排除**。ArgumentError 検証もハッシュキー由来に統一。**教訓: リファクタリング後の再チェックに Brakeman を含めること**（rspec / rubocop のみ再実行して push したのが原因）
-- [ ] 6.2 グラフデータ JSON エンドポイントの実装
+- [x] 6.2 グラフデータ JSON エンドポイントの実装
   - 実施内容: 6.1 の集計を返す JSON エンドポイントを実装する（種目・期間 1/3/6 ヶ月の指定、current_user スコープ）
   - テスト種別: request spec
   - 完了条件: 指定した種目・期間の JSON が返り、spec が通る
+  - 決定（2026-08-25・エンドポイントは「実装時に確定」のため実装詳細として判断）: `ChartsController` に `GET /charts/exercise_progress`（exercise_id / months）と `GET /charts/training_frequency`(unit / months）。**許可外の months（1/3/6 以外）は既定の 3、許可外の unit は month にフォールバック**（UI のセレクト経由が前提のため、改ざん値はエラーでなく既定に倒す）
+  - 実施結果（2026-08-25）: `app/controllers/charts_controller.rb`・ルート 2 本・`spec/requests/charts_spec.rb`（12 examples）を追加
+    - 種目は `Exercise.available_for(current_user).find`（他ユーザーの種目は 404）、集計は 6.1 のモジュールに委譲し current_user スコープ
+    - unit の許可判定は `TrainingFrequency::PERIOD_EXPRESSIONS` のキーを単一の情報源として参照（ホワイトリストの二重管理を回避）
+    - JSON 形: progress は `{ exercise_id, months, series: [{ date, max_weight, estimated_one_rm }] }`、frequency は `{ unit, months, counts: [{ period_start, days }] }`
+    - Brakeman 実行（外部入力を受けるコントローラ追加のため）: 警告 0
 - [ ] 6.3 ダッシュボード画面の実装
   - 実施内容: Chart.js（importmap 経由）で種目別推移（折れ線 2 系列: 最大重量・推定 1RM、種目セレクト・期間切替）と月間頻度（棒）を描画し、当週サマリ（実施日数・総セット数）を表示する
   - 対象: ルート `/`（仕様書 4.4 画面 2）
