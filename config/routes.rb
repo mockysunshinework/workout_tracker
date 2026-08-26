@@ -18,4 +18,8 @@ Rails.application.routes.draw do
     resources :workout_sets, only: [ :create, :update, :destroy ]
   end
   resources :exercises, only: [ :index, :create, :update, :destroy ]
+
+  # ダッシュボード（6.3）のグラフが参照する JSON エンドポイント（SPEC 4.4）
+  get "charts/exercise_progress", to: "charts#exercise_progress", as: :charts_exercise_progress
+  get "charts/training_frequency", to: "charts#training_frequency", as: :charts_training_frequency
 end
