@@ -265,9 +265,11 @@
     - **webhookEventId**: ULID 形式・イベントを一意に識別・**再送時も不変** → 7.5 の冪等性キー（unique index）として採用可能な根拠。再送時は `deliveryContext.isRedelivery = true`。再送有効時はイベント発生順と到達順が異なりうるため timestamp に留意
     - **Reply API レート制限**: 2,000 req/秒・チャネル単位（超過 429）。個人利用では実質制約なし
     - 7 章以降への影響: 7.4〜7.6 の設計（webhookEventId 冪等・エラー 3 分類）は確認結果と整合。変更不要
-- [ ] 7.2 LINE Developers チャネルの作成と資格情報の設定
+- [x] 7.2 LINE Developers チャネルの作成と資格情報の設定
   - 実施内容: Messaging API チャネルを作成（ユーザー操作を含む）し、channel secret / channel access token を Rails credentials（または環境変数）に設定する。リポジトリにコミットしないことを確認する
   - 完了条件: アプリから資格情報を参照でき、秘密情報が Git 管理外にある
+  - 実施結果（2026-08-28）: LINE 公式アカウント「WORKOUT TRACKER」（未認証・チャット用・ビジネスマネージャー組織は新規作成）を作成し、Messaging API を有効化（ユーザー操作）。資格情報は **Rails credentials を採用**（環境変数方式は不採用。gem 追加不要で Rails 標準のため）し、`line.channel_secret` / `line.channel_access_token` に格納
+    - 検証: `Rails.application.credentials.dig(:line, ...)` の presence 確認（値は表示しない）で両方 true。差分は暗号化済み `credentials.yml.enc` のみで、復号鍵 `master.key` は Git 管理外（.gitignore 済み）を確認
 - [ ] 7.3 LINE Bot SDK の導入
   - 実施内容: LINE 公式の Ruby SDK gem（line-bot-api）を Gemfile に追加し、クライアント初期化をまとめる
   - 完了条件: コンソールから SDK クライアントを初期化できる
