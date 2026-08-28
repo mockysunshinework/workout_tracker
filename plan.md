@@ -256,9 +256,15 @@
 
 ## 7. LINE Webhook 基盤（F-03 前段）
 
-- [ ] 7.1 【確認・決定】LINE 公式ドキュメントの制約値確認（仕様書 10 章 #3 #12）
+- [x] 7.1 【確認・決定】LINE 公式ドキュメントの制約値確認（仕様書 10 章 #3 #12）
   - 実施内容: replyToken の有効期限・再利用可否、Webhook 再送（redelivery）の有効化方法と再送回数/期間上限、webhookEventId の仕様、Reply API のレート制限を公式ドキュメントで確認し、仕様書 10 章を更新する
   - 完了条件: 確認結果が仕様書に反映され、7 章以降の実装判断に使える状態
+  - 確認結果（2026-08-28・developers.line.biz 公式ドキュメント。仕様書 10 章 #3 #12 に反映済み・版 2.4）:
+    - **replyToken**: 1 回のみ使用可。Webhook 受信後 **1 分以内**に使用（超過は動作保証なし。期限は予告なく変更されうるため「期限に依存しない・可能な限り早く返信する」実装とする）。**再送 Webhook の replyToken は再送受信後 1 分以内なら使用可** → 4.2.4 の「一時障害は 500 → 再送でリカバリ」設計が成立する根拠
+    - **Webhook 再送**: LINE Developers コンソール → Messaging API タブ → Use webhook ON → Webhook redelivery ON（7.7 の手順）。2xx 以外で自動再送されるが**回数・間隔は非公開**かつ到達保証なし → 再送は「安全網」であり確実な回復手段として設計に組み込まない
+    - **webhookEventId**: ULID 形式・イベントを一意に識別・**再送時も不変** → 7.5 の冪等性キー（unique index）として採用可能な根拠。再送時は `deliveryContext.isRedelivery = true`。再送有効時はイベント発生順と到達順が異なりうるため timestamp に留意
+    - **Reply API レート制限**: 2,000 req/秒・チャネル単位（超過 429）。個人利用では実質制約なし
+    - 7 章以降への影響: 7.4〜7.6 の設計（webhookEventId 冪等・エラー 3 分類）は確認結果と整合。変更不要
 - [ ] 7.2 LINE Developers チャネルの作成と資格情報の設定
   - 実施内容: Messaging API チャネルを作成（ユーザー操作を含む）し、channel secret / channel access token を Rails credentials（または環境変数）に設定する。リポジトリにコミットしないことを確認する
   - 完了条件: アプリから資格情報を参照でき、秘密情報が Git 管理外にある
