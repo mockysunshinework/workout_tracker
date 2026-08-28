@@ -270,9 +270,13 @@
   - 完了条件: アプリから資格情報を参照でき、秘密情報が Git 管理外にある
   - 実施結果（2026-08-28）: LINE 公式アカウント「WORKOUT TRACKER」（未認証・チャット用・ビジネスマネージャー組織は新規作成）を作成し、Messaging API を有効化（ユーザー操作）。資格情報は **Rails credentials を採用**（環境変数方式は不採用。gem 追加不要で Rails 標準のため）し、`line.channel_secret` / `line.channel_access_token` に格納
     - 検証: `Rails.application.credentials.dig(:line, ...)` の presence 確認（値は表示しない）で両方 true。差分は暗号化済み `credentials.yml.enc` のみで、復号鍵 `master.key` は Git 管理外（.gitignore 済み）を確認
-- [ ] 7.3 LINE Bot SDK の導入
+- [x] 7.3 LINE Bot SDK の導入
   - 実施内容: LINE 公式の Ruby SDK gem（line-bot-api）を Gemfile に追加し、クライアント初期化をまとめる
   - 完了条件: コンソールから SDK クライアントを初期化できる
+  - 実施結果（2026-08-28・gem 追加はユーザー承認済み）: `line-bot-api ~> 2.10`（2.10.0）を追加。**2.x 系は 1.x と API 非互換**の新世代（旧 `Line::Bot::Client` を使うネット記事とは書き方が異なる）
+    - 初期化は `app/models/line_bot.rb`（module・3.3 と同パターン）に集約: `LineBot.client`（Reply API 用 ApiClient・9 章で使用）と `LineBot.webhook_parser`（署名検証＋イベントパース用 WebhookParser・7.4 で使用）。資格情報は credentials から取得
+    - 検証: `bin/rails runner` で両者の初期化を確認（完了条件）。環境構築のため RED/GREEN は省略（振る舞いの実装は 7.4 以降で TDD）
+    - 依存追加時チェック: bundler-audit（脆弱性なし）/ bundle check（整合）。全体 201 examples green・RuboCop no offenses
 - [ ] 7.4 Webhook エンドポイントと署名検証の実装
   - 実施内容: Webhook 用ルートとコントローラを作成し、`X-Line-Signature`（HMAC-SHA256）検証を実装する。検証失敗は 400、CSRF 保護は当該エンドポイントのみ除外（仕様書 4.2.4 / 8 章）
   - 対象: ルート例 `/webhooks/line` / テスト種別: request spec（正しい署名→200、不正署名→400）

@@ -24,6 +24,9 @@ gem "devise"
 gem "rails-i18n"
 gem "devise-i18n"
 
+# Official LINE Messaging API SDK (7.3). v2 line; the 1.x interface is incompatible
+gem "line-bot-api", "~> 2.10"
+
 # Use Active Model has_secure_password [https://guides.rubyonrails.org/active_model_basics.html#securepassword]
 # gem "bcrypt", "~> 3.1.7"
 
