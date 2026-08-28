@@ -1,4 +1,40 @@
-<%# Minimal landing for 2.3; the real dashboard (charts/summary) is implemented in 6.3 %>
-<h1>ダッシュボード（仮）</h1>
-<p><%= current_user.email %> でログイン中です。</p>
-<%= button_to "ログアウト", destroy_user_session_path, method: :delete %>
+<h1>ダッシュボード</h1>
+
+<nav>
+  <%= link_to "記録一覧", workouts_path %> |
+  <%= link_to "種目管理", exercises_path %>
+</nav>
+
+<section id="weekly-summary">
+  <h2>今週のサマリ</h2>
+  <%# 値の span は spec の検証フック（data-summary）。文言を変える場合も span は残すこと %>
+  <p>
+    実施日数 <span data-summary="days"><%= @weekly_days %></span> 日 /
+    総セット数 <span data-summary="sets"><%= @weekly_sets %></span> セット
+  </p>
+</section>
+
+<section data-controller="progress-chart"
+         data-progress-chart-url-value="<%= charts_exercise_progress_path %>">
+  <h2>種目別推移</h2>
+  <select data-progress-chart-target="exerciseSelect" data-action="progress-chart#reload">
+    <%= options_from_collection_for_select(@exercises, :id, :name) %>
+  </select>
+  <select data-progress-chart-target="monthsSelect" data-action="progress-chart#reload">
+    <option value="1">1ヶ月</option>
+    <option value="3" selected>3ヶ月</option>
+    <option value="6">6ヶ月</option>
+  </select>
+  <canvas data-progress-chart-target="canvas"></canvas>
+</section>
+
+<section data-controller="frequency-chart"
+         data-frequency-chart-url-value="<%= charts_training_frequency_path %>">
+  <h2>月間頻度</h2>
+  <canvas data-frequency-chart-target="canvas"></canvas>
+</section>
+
+<footer>
+  <p><%= current_user.email %> でログイン中です。</p>
+  <%= button_to "ログアウト", destroy_user_session_path, method: :delete %>
+</footer>

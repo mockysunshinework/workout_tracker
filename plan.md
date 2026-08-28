@@ -204,6 +204,10 @@
   - 実施内容: 種目セレクト（記録詳細のセット追加フォーム）と種目管理画面で、プリセットと自分の種目を判別できる表示にする（例: 「ベンチプレス（プリセット）」のラベル付け、または optgroup での区分け。方式は着手時に決定）
   - 完了条件: 同名の独自種目が存在してもセレクト・一覧でプリセットかどうか判別できることを spec で確認
   - 経緯（2026-08-24・ユーザー指示で追加）: 同名共存自体は仕様どおり（4.5 の一意性は所有者ごと、4.3.1 の照合順「独自→プリセット」が前提）だが、セレクトに同名が並ぶと取り違えで記録が 2 種目に分散するリスクがあるため。ビュー層のみの変更で後追い可能なため実装時期は任意（6 章のグラフ実装前後を想定）
+- [ ] 5.7 フォーム入力のラベル付け（アクセシビリティ）
+  - 実施内容: 全画面のフォーム入力（セレクト・テキスト・数値）に `<label>` または `aria-label` を付ける。対象: ダッシュボードの種目/期間セレクト、記録一覧の月フィルタ、記録詳細のセット追加・修正フォーム、種目管理の追加・名称変更フォーム（placeholder はラベルの代替にならないため置き換えではなく追加）
+  - 完了条件: 全画面のフォーム入力に名前が付いていることを spec で確認し、既存 spec が green のまま
+  - 経緯（2026-08-28・ユーザー指示で追加）: PR #47 レビューの所見（ダッシュボードのセレクトにラベルがない）を検証したところ、全画面共通の既存パターンと判明。ダッシュボードだけ直すと不整合になるため、一括対応の項目として計画化。ビュー層のみで後追い可能なため実装時期は任意
 
 ## 6. ダッシュボード・グラフ（F-07）
 
@@ -231,10 +235,24 @@
     - unit の許可判定は `TrainingFrequency::PERIOD_EXPRESSIONS` のキーを単一の情報源として参照（ホワイトリストの二重管理を回避）
     - JSON 形: progress は `{ exercise_id, months, series: [{ date, max_weight, estimated_one_rm }] }`、frequency は `{ unit, months, counts: [{ period_start, days }] }`
     - Brakeman 実行（外部入力を受けるコントローラ追加のため）: 警告 0
-- [ ] 6.3 ダッシュボード画面の実装
+- [x] 6.3 ダッシュボード画面の実装
   - 実施内容: Chart.js（importmap 経由）で種目別推移（折れ線 2 系列: 最大重量・推定 1RM、種目セレクト・期間切替）と月間頻度（棒）を描画し、当週サマリ（実施日数・総セット数）を表示する
   - 対象: ルート `/`（仕様書 4.4 画面 2）
   - 完了条件: ブラウザでグラフ 2 種とサマリが仕様どおり表示される（手動確認）。サマリ値は request spec で確認
+  - 作業分解（tdd-dev 実行管理用）:
+    - [x] 当週サマリ（実施日数・総セット数。request spec で TDD）
+    - [x] JS 基盤整備（Turbo / Stimulus / Chart.js の importmap pin。環境構築のため RED/GREEN 省略）
+    - [x] ダッシュボードのビューと Stimulus グラフコントローラ（HTML 契約は request spec、描画はブラウザ手動確認）
+  - 実施結果（2026-08-26・ブラウザ手動確認済み）: `home#index` を暫定ランディングから本ダッシュボードへ置き換え（2.3 の予定どおり）
+    - 当週サマリ: 月曜起点の `Date.current.all_week`（TrainingFrequency の ISO 週と整合）。実施日数は workouts 行数、総セット数は当週 workouts に紐づく workout_sets 数。`spec/requests/dashboard_spec.rb`（7 examples）で当週境界・他ユーザー除外・HTML 契約（data-controller / canvas / セレクト構成）を検証
+    - **サマリ値の検証は `data-summary` フック経由に変更**（2026-08-27・ユーザー指摘）: 当初の正規表現（`/実施日数\s*2\s*日/`）は文言・レイアウト変更で集計ロジックの検証まで壊れる結合があった。値は `<span data-summary="days">` から取得し、項目名（実施日数・総セット数＝仕様書 4.4 の表示項目）の存在検証は別 example に分離。ビューにはフックを残す旨のコメントを付記
+    - JS 基盤: importmap に Turbo / Stimulus / stimulus-loading の pin と `app/javascript/controllers/`（application.js / index.js）を標準構成で追加。Chart.js は `bin/importmap pin chart.js/auto`（4.5.1。@kurkle/color とともに vendor/javascript へダウンロード）
+    - Stimulus: `progress_chart_controller`（折れ線 2 系列。種目・期間セレクトの change で再取得）と `frequency_chart_controller`（棒。unit=month・months=6 固定）。いずれも 6.2 の JSON エンドポイントから fetch
+    - 全体 200 examples green・RuboCop no offenses・Brakeman 警告 0・起動確認済み
+    - **Chart.js の取り込み方法を UMD に変更**: 当初の `bin/importmap pin chart.js/auto`（jspm ESM）は内部で相対パスのチャンク（`../dist/chart.js` 等）を import しており、pin コマンドが相対 import を追跡しないためブラウザで 404 → グラフコントローラごと読み込み失敗した。**自己完結の UMD 単一ファイル（chart.umd.js 4.5.1）を vendor に配置**し、副作用 import ＋ `window.Chart` 参照に変更して解消（経緯は importmap.rb のコメントにも記載）
+  - 6 章完了時のセキュリティチェック（2026-08-26）: bundler-audit（脆弱性なし）/ bundle check（整合）/ Brakeman（警告 0）/ 差分への秘密情報混入なし。全体 200 examples green・RuboCop no offenses
+  - レビュー確認（2026-08-28・`@claude` メンションレビュー）: ブロッカーなし・Approve 表明。所見 2 件とも修正せず: (1) JS の構文説明コメントは**学習記録として意図的に残す**（ユーザー判断）。(2) セレクトのラベル欠如は正当な指摘だが、検証の結果**全画面共通の既存パターン**と判明したため、ダッシュボードだけの部分修正はせず **5.7 として一括対応を計画化**
+  - 発見（2026-08-26）: importmap に Turbo / Stimulus の pin がなく `app/javascript/controllers/` も未作成で、**JS が実質未ロードだった**（rails new 時の生成漏れか手動簡略化かは不明）。このため 5.4 の削除確認ダイアログ（`data-turbo-confirm`）は実ブラウザで機能していなかった可能性が高い（spec は属性の存在までしか検証しないため検出できず）。本項目の JS 基盤整備で解消し、手動確認の項目に削除ダイアログも含める
 
 ## 7. LINE Webhook 基盤（F-03 前段）
 
