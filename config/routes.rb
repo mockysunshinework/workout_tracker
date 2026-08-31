@@ -19,6 +19,9 @@ Rails.application.routes.draw do
   end
   resources :exercises, only: [ :index, :create, :update, :destroy ]
 
+  # LINE プラットフォームからの Webhook 受信（SPEC 4.2.4 / 8 章）
+  post "webhooks/line", to: "line_webhooks#create", as: :webhooks_line
+
   # ダッシュボード（6.3）のグラフが参照する JSON エンドポイント（SPEC 4.4）
   get "charts/exercise_progress", to: "charts#exercise_progress", as: :charts_exercise_progress
   get "charts/training_frequency", to: "charts#training_frequency", as: :charts_training_frequency

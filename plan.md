@@ -277,10 +277,15 @@
     - 初期化は `app/models/line_bot.rb`（module・3.3 と同パターン）に集約: `LineBot.client`（Reply API 用 ApiClient・9 章で使用）と `LineBot.webhook_parser`（署名検証＋イベントパース用 WebhookParser・7.4 で使用）。資格情報は credentials から取得
     - 検証: `bin/rails runner` で両者の初期化を確認（完了条件）。環境構築のため RED/GREEN は省略（振る舞いの実装は 7.4 以降で TDD）
     - 依存追加時チェック: bundler-audit（脆弱性なし）/ bundle check（整合）。全体 201 examples green・RuboCop no offenses
-- [ ] 7.4 Webhook エンドポイントと署名検証の実装
+- [x] 7.4 Webhook エンドポイントと署名検証の実装
   - 実施内容: Webhook 用ルートとコントローラを作成し、`X-Line-Signature`（HMAC-SHA256）検証を実装する。検証失敗は 400、CSRF 保護は当該エンドポイントのみ除外（仕様書 4.2.4 / 8 章）
   - 対象: ルート例 `/webhooks/line` / テスト種別: request spec（正しい署名→200、不正署名→400）
   - 完了条件: 上記 spec が通る
+  - 実施結果（2026-08-28）: `POST /webhooks/line` → `LineWebhooksController#create`。署名検証は SDK の `WebhookParser`（7.3）に委譲し、`InvalidSignatureError` と署名ヘッダ欠如を 400 に。`authenticate_user!` / CSRF の除外は本エンドポイントのみ（CLAUDE.md の唯一の許可箇所）
+    - `spec/requests/line_webhooks_spec.rb`（5 examples）: 署名はスタブせず**実 HMAC-SHA256 で計算**（正署名 200 / 本文改ざん 400 / ヘッダなし 400 / 誤シークレット 400）。**CSRF 保護を test 内で有効化**して実行し、Webhook が CSRF 免除で通ること＋他エンドポイント（/exercises）は保護が維持されること（トークンなし POST → 422・レコード未作成）まで検証
+    - `LineBot` を微修正: `channel_secret` / `channel_access_token` をメソッドに抽出し**メモ化を廃止**（生成が軽量でテストの資格情報差し替えを妨げないため。7.3 の実装から変更）
+    - test 環境は `show_exceptions = :rescuable` のため `InvalidAuthenticityToken` は例外でなく 422 応答になる（spec の検証方法として記録）
+    - Brakeman 実行（認証・CSRF 除外を含む重要変更）: 警告 0
 - [ ] 7.5a processed_line_events テーブルの作成（DB）
   - 実施内容: 仕様書 4.5 の定義でマイグレーション作成（webhook_event_id **unique index**、received_at NOT NULL）
   - 対象: `processed_line_events` テーブル
