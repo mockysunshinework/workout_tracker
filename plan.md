@@ -288,14 +288,23 @@
     - Brakeman 実行（認証・CSRF 除外を含む重要変更）: 警告 0
     - 手動 E2E 確認（Thunder Client / curl）: 署名なし 400 → 不正署名 400 → 実 secret の正署名＋Webhook 形式の本文で 200。副産物として「正署名＋非 Webhook 形式の本文（例: `{}`）は現状 500（`NoMethodError`）」を確認 — 7.6 の対象
   - レビュー確認（2026-08-31・`@claude` メンションレビュー）: ブロッカーなし・approve 表明。指摘「正署名＋不正 JSON 本文で未処理例外（500）・spec 未カバー」は**正当だが本 PR では修正不要** — 手動 E2E で既知の挙動であり、仕様書 4.2.4 の分類（パース失敗相当=200）を実装する **7.6 の計画対象そのもの**のため。7.6 では `JSON::ParserError`（壊れた JSON）と `NoMethodError`（正しい JSON だが非 Webhook 形式）が別例外である点を踏まえ**両方をテストケースに含める**こと
-- [ ] 7.5a processed_line_events テーブルの作成（DB）
+- [x] 7.5a processed_line_events テーブルの作成（DB）
   - 実施内容: 仕様書 4.5 の定義でマイグレーション作成（webhook_event_id **unique index**、received_at NOT NULL）
   - 対象: `processed_line_events` テーブル
   - 完了条件: マイグレーション成功。同一 webhook_event_id の 2 件目が DB で拒否されることをテストで確認
-- [ ] 7.5b 冪等性（webhookEventId 重複排除）の実装（API 処理）
+  - 実施結果（2026-08-31）: `db/migrate/20260831064259_create_processed_line_events.rb` を作成。モデルは 7.5b の作業のため、3.2/4.1 と同方針で生 SQL の `spec/db/processed_line_events_table_spec.rb`（4 examples）を追加
+    - 一意制約（同一 webhook_event_id の 2 件目を拒否・別 ID は許可）、webhook_event_id / received_at の NOT NULL を検証。テストデータの ID は ULID 形式（7.1 の確認結果に整合）
+    - 30 日経過行の削除（仕様書 4.5 の案）は Stage 1 では rake タスク等での手動運用（仕様書 4.2.4 注記）のため本項目に含めない
+- [x] 7.5b 冪等性（webhookEventId 重複排除）の実装（API 処理）
   - 実施内容: 「イベント ID 登録と業務処理を同一 DB トランザクションで行い、登録済みならスキップして 200」を実装する（仕様書 4.2.4）
   - テスト種別: request spec（同一イベント 2 回送信→処理は 1 回）
   - 完了条件: 重複イベントで業務処理が 1 回しか走らないことを spec で確認
+  - 実施結果（2026-08-31）: 冪等実行を `ProcessedLineEvent.record_once(webhook_event_id) { 業務処理 }` としてモデルに実装（CLAUDE.md「まず model に」）。ID の `create!` とブロックを同一トランザクションで実行し、`RecordNotUnique` は「処理済み」として false（並行受信も unique 制約で二重実行されない）。**ブロックの例外は握りつぶさず伝播** — 登録ごとロールバックすることで 4.2.4 の「500 → LINE 再送でリカバリ」が成立する
+    - コントローラは parse 結果の各イベントを `record_once` に通す（業務処理の中身は 8 章以降。現状は登録のみ）
+    - model spec 4 examples: 初回実行・重複スキップ・**ブロック失敗時に登録が巻き戻る**・received_at 記録
+    - request spec 3 examples: 同一イベント 2 回送信 → 記録 1 件かつ両方 200 / 別 ID は 2 件 / events 空（検証ボタン相当）は記録 0 で 200
+    - SDK の FollowEvent は `follow`（isUnblocked）プロパティが必須のためテストデータに含めた（実際の follow イベントにも含まれるフィールド）
+    - Brakeman 実行（Webhook 変更のため）: 警告 0
 - [ ] 7.6 エラー分類応答の実装
   - 実施内容: 仕様書 4.2.4 の分類（署名不正=400 / 業務エラー=200＋案内返信 / 一時障害（未コミット例外）=500）をコントローラのエラーハンドリングとして実装する
   - テスト種別: request spec（DB 例外を発生させて 500、パース失敗相当で 200）

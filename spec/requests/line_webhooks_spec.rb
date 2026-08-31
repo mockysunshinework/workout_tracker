@@ -59,6 +59,52 @@ RSpec.describe "LINE Webhook", type: :request do
     end
   end
 
+  describe "冪等性（webhookEventId の重複排除・SPEC 4.2.4）" do
+    def webhook_body(webhook_event_id:)
+      {
+        destination: "U0000",
+        events: [
+          {
+            type: "follow",
+            follow: { isUnblocked: false },
+            webhookEventId: webhook_event_id,
+            deliveryContext: { isRedelivery: false },
+            timestamp: 1_756_600_000_000,
+            source: { type: "user", userId: "U1234567890abcdef1234567890abcdef" },
+            replyToken: "dummy-reply-token",
+            mode: "active"
+          }
+        ]
+      }.to_json
+    end
+
+    it "同一イベントを 2 回受信しても処理は 1 回で、どちらも 200 を返す（再送のスキップ）" do
+      content = webhook_body(webhook_event_id: "01FZ74A0TDDPYRVKNK77XKC3ZR")
+
+      2.times { post_webhook(content, signature: signature_for(content)) }
+
+      expect(response).to have_http_status(:ok)
+      expect(ProcessedLineEvent.where(webhook_event_id: "01FZ74A0TDDPYRVKNK77XKC3ZR").count).to eq 1
+    end
+
+    it "イベント ID が異なれば別イベントとして記録される" do
+      first = webhook_body(webhook_event_id: "01FZ74A0TDDPYRVKNK77XKC3ZR")
+      second = webhook_body(webhook_event_id: "01FZ74A0TDDPYRVKNK77XKC3ZS")
+
+      post_webhook(first, signature: signature_for(first))
+      post_webhook(second, signature: signature_for(second))
+
+      expect(ProcessedLineEvent.count).to eq 2
+    end
+
+    it "events が空の Webhook（検証ボタン相当）は何も記録せず 200 を返す" do
+      post_webhook(body, signature: signature_for(body))
+
+      expect(response).to have_http_status(:ok)
+      expect(ProcessedLineEvent.count).to eq 0
+    end
+  end
+
   describe "他エンドポイントの保護が維持されていること" do
     it "Webhook 以外では CSRF 保護が引き続き有効（トークンなし POST は 422）" do
       user = create(:user)
