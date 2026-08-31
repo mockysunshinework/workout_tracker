@@ -286,6 +286,8 @@
     - `LineBot` を微修正: `channel_secret` / `channel_access_token` をメソッドに抽出し**メモ化を廃止**（生成が軽量でテストの資格情報差し替えを妨げないため。7.3 の実装から変更）
     - test 環境は `show_exceptions = :rescuable` のため `InvalidAuthenticityToken` は例外でなく 422 応答になる（spec の検証方法として記録）
     - Brakeman 実行（認証・CSRF 除外を含む重要変更）: 警告 0
+    - 手動 E2E 確認（Thunder Client / curl）: 署名なし 400 → 不正署名 400 → 実 secret の正署名＋Webhook 形式の本文で 200。副産物として「正署名＋非 Webhook 形式の本文（例: `{}`）は現状 500（`NoMethodError`）」を確認 — 7.6 の対象
+  - レビュー確認（2026-08-31・`@claude` メンションレビュー）: ブロッカーなし・approve 表明。指摘「正署名＋不正 JSON 本文で未処理例外（500）・spec 未カバー」は**正当だが本 PR では修正不要** — 手動 E2E で既知の挙動であり、仕様書 4.2.4 の分類（パース失敗相当=200）を実装する **7.6 の計画対象そのもの**のため。7.6 では `JSON::ParserError`（壊れた JSON）と `NoMethodError`（正しい JSON だが非 Webhook 形式）が別例外である点を踏まえ**両方をテストケースに含める**こと
 - [ ] 7.5a processed_line_events テーブルの作成（DB）
   - 実施内容: 仕様書 4.5 の定義でマイグレーション作成（webhook_event_id **unique index**、received_at NOT NULL）
   - 対象: `processed_line_events` テーブル
