@@ -17,7 +17,9 @@ RSpec.describe "Dashboard", type: :request do
       monday = Date.current.beginning_of_week
       exercise = create(:exercise, user: user)
       workout1 = create(:workout, user: user, performed_on: monday)
-      workout2 = create(:workout, user: user, performed_on: Date.current)
+      # Date.current だと月曜日に実行したとき workout1 と同日になり一意制約に当たるため、
+      # どの曜日でも「週内かつ別日」になる月曜+1日を使う
+      workout2 = create(:workout, user: user, performed_on: monday + 1)
       create(:workout_set, workout: workout1, exercise: exercise, set_number: 1)
       create(:workout_set, workout: workout1, exercise: exercise, set_number: 2)
       create(:workout_set, workout: workout2, exercise: exercise, set_number: 1)
