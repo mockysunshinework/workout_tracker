@@ -59,25 +59,26 @@ RSpec.describe "LINE Webhook", type: :request do
     end
   end
 
-  describe "冪等性（webhookEventId の重複排除・SPEC 4.2.4）" do
-    def webhook_body(webhook_event_id:)
-      {
-        destination: "U0000",
-        events: [
-          {
-            type: "follow",
-            follow: { isUnblocked: false },
-            webhookEventId: webhook_event_id,
-            deliveryContext: { isRedelivery: false },
-            timestamp: 1_756_600_000_000,
-            source: { type: "user", userId: "U1234567890abcdef1234567890abcdef" },
-            replyToken: "dummy-reply-token",
-            mode: "active"
-          }
-        ]
-      }.to_json
-    end
+  # follow イベント 1 件を含む Webhook 本文（冪等性・エラー分類の spec で共用）
+  def webhook_body(webhook_event_id:)
+    {
+      destination: "U0000",
+      events: [
+        {
+          type: "follow",
+          follow: { isUnblocked: false },
+          webhookEventId: webhook_event_id,
+          deliveryContext: { isRedelivery: false },
+          timestamp: 1_756_600_000_000,
+          source: { type: "user", userId: "U1234567890abcdef1234567890abcdef" },
+          replyToken: "dummy-reply-token",
+          mode: "active"
+        }
+      ]
+    }.to_json
+  end
 
+  describe "冪等性（webhookEventId の重複排除・SPEC 4.2.4）" do
     it "同一イベントを 2 回受信しても処理は 1 回で、どちらも 200 を返す（再送のスキップ）" do
       content = webhook_body(webhook_event_id: "01FZ74A0TDDPYRVKNK77XKC3ZR")
 
@@ -103,6 +104,47 @@ RSpec.describe "LINE Webhook", type: :request do
       expect(response).to have_http_status(:ok)
       expect(ProcessedLineEvent.count).to eq 0
     end
+  end
+
+  describe "エラー分類応答（SPEC 4.2.4: 署名不正=400 / 業務エラー相当=200 / 一時障害=500）" do
+    # test 環境の show_exceptions = :rescuable では未 rescue 例外が spec 内で raise される。
+    # 「本番で 500 応答になる」ことをステータスとして検証するため :all に切り替える
+    around do |example|
+      original = Rails.application.env_config["action_dispatch.show_exceptions"]
+      Rails.application.env_config["action_dispatch.show_exceptions"] = :all
+      example.run
+    ensure
+      Rails.application.env_config["action_dispatch.show_exceptions"] = original
+    end
+
+    it "正署名でも本文が壊れた JSON なら 200 を返す（再送で回復しない・返信先もないため受領扱い）" do
+      content = "{broken json"
+
+      post_webhook(content, signature: signature_for(content))
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "正署名でも本文が Webhook 形式でない JSON なら 200 を返す" do
+      content = "{}"
+
+      post_webhook(content, signature: signature_for(content))
+
+      expect(response).to have_http_status(:ok)
+      expect(ProcessedLineEvent.count).to eq 0
+    end
+
+    it "業務処理中の DB 例外は rescue されず 500 になる（LINE の再送でリカバリさせる）" do
+      allow(ProcessedLineEvent).to receive(:record_once)
+        .and_raise(ActiveRecord::ConnectionNotEstablished)
+      content = webhook_body(webhook_event_id: "01FZ74A0TDDPYRVKNK77XKC3ZR")
+
+      post_webhook(content, signature: signature_for(content))
+
+      expect(response).to have_http_status(:internal_server_error)
+    end
+
+    # 署名不正 = 400 は「POST /webhooks/line」の describe で検証済み
   end
 
   describe "他エンドポイントの保護が維持されていること" do
