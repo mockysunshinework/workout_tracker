@@ -8,8 +8,13 @@ class LineWebhooksController < ApplicationController
     signature = request.headers["X-Line-Signature"]
     return head :bad_request if signature.blank?
 
-    LineBot.webhook_parser.parse(body: request.body.read, signature: signature)
-    # イベントの業務処理（冪等性・返信）は 7.5b 以降で実装する。7.4 は受信と署名検証まで
+    events = LineBot.webhook_parser.parse(body: request.body.read, signature: signature)
+    events.each do |event|
+      # 登録済み（再送・並行受信）のイベントはブロックが実行されずスキップされる（SPEC 4.2.4）
+      ProcessedLineEvent.record_once(event.webhook_event_id) do
+        # 業務処理（記録保存・返信）は 8 章以降で実装する
+      end
+    end
     head :ok
   rescue Line::Bot::V2::WebhookParser::InvalidSignatureError
     head :bad_request
