@@ -37,6 +37,7 @@ end
 RSpec.configure do |config|
   # Use FactoryBot methods (create/build/build_stubbed) without the FactoryBot prefix
   config.include FactoryBot::Syntax::Methods
+  config.include ActiveSupport::Testing::TimeHelpers
 
   # Devise helpers (e.g. sign_in) in request specs
   config.include Devise::Test::IntegrationHelpers, type: :request

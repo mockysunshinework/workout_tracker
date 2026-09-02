@@ -337,10 +337,15 @@
   - 実施結果（2026-09-01）: `db/migrate/20260901055350_add_line_columns_to_users.rb` を作成。`spec/db/users_line_columns_spec.rb`（5 examples）で一意制約（同一 line_user_id / line_link_code の拒否・NULL 同士の共存）と line_blocked の DB default・NOT NULL を検証
     - line_user_id は仕様どおり **NOT NULL 行のみの部分 unique index**（`where: "line_user_id IS NOT NULL"`。未連携 NULL 行を index から除外）
     - テスト手法: users は既存 NOT NULL 列があるため行の用意は factory、LINE 列の書き込みは `update_column`（バリデーション回避で DB 制約に直接当てる）
-- [ ] 8.2a 連携コード発行・解除ロジックの実装（ドメイン）
+- [x] 8.2a 連携コード発行・解除ロジックの実装（ドメイン）
   - 実施内容: 6 桁英数字コードの生成（一意・有効期限 10 分）と連携解除（line_user_id の NULL 化）をドメイン処理として実装する（仕様書 4.1.2）
   - テスト種別: model/unit spec（コード形式・期限・再発行時の置き換え）
   - 完了条件: unit spec が通る
+  - 実施結果（2026-09-02）: `User#issue_line_link_code!` / `User#unlink_line!` を実装（model spec +5 examples）
+    - **コードは大文字英数字 `[A-Z0-9]` の一様サンプリング**（`SecureRandom` を乱数源に charset から抽選）。LINE のトークに手入力するコードのため大文字に限定し、照合側（8.3）で入力を upcase して大小文字の打ち間違いを吸収する設計 — 仕様の「英数字」の実装詳細として判断
+    - 一意性は DB unique 制約（8.1）を頼りに **RecordNotUnique でリトライ**（最大 5 回。3.5 の seed と同様、事前 exists? チェックの TOCTOU を避ける）。リトライは private の `generate_line_link_code` をスタブして決定的に検証
+    - 再発行はコード・有効期限とも置き換え（`travel_to` で期限の前進を検証。`ActiveSupport::Testing::TimeHelpers` を rails_helper に追加）
+    - 解除は仕様どおり `line_user_id` の NULL 化のみ（残った期限切れコードは無害のため触れない）
 - [ ] 8.2b LINE 連携設定画面の実装（UI）
   - 実施内容: 連携コード発行操作・連携状態表示・連携解除操作の画面を実装する
   - 対象: ルート `/settings/line`（仕様書 4.4 画面 6） / テスト種別: request spec
