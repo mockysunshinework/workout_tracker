@@ -326,13 +326,17 @@
 - [ ] 7.7 Webhook 再送の有効化
   - 実施内容: LINE Developers コンソールで Webhook 再送（redelivery）を有効化する（7.1 の確認結果に従う。ユーザー操作を含む）
   - 完了条件: 再送設定が有効になっている
+  - 経緯（2026-09-01）: コンソールの「Webhook の利用」「Webhook の再送」トグルは **Webhook URL を登録するまで表示されない**ことを実画面で確認。URL は ngrok 等の公開 URL（12.1 の冒頭ステップ）が必要なため、**12.1 と同時に実施する**（項目自体は変更なし・実施タイミングの注記のみ）
 
 ## 8. LINE アカウント連携（F-02）
 
-- [ ] 8.1 users への LINE 関連カラム追加
+- [x] 8.1 users への LINE 関連カラム追加
   - 実施内容: `line_user_id`（unique・NOT NULL 行のみの部分 index）、`line_link_code`（unique）、`line_link_code_expires_at`、`line_blocked`（default false）を追加する（仕様書 4.5）
   - 対象: `users` テーブル
   - 完了条件: マイグレーション成功、一意制約のテストが通る
+  - 実施結果（2026-09-01）: `db/migrate/20260901055350_add_line_columns_to_users.rb` を作成。`spec/db/users_line_columns_spec.rb`（5 examples）で一意制約（同一 line_user_id / line_link_code の拒否・NULL 同士の共存）と line_blocked の DB default・NOT NULL を検証
+    - line_user_id は仕様どおり **NOT NULL 行のみの部分 unique index**（`where: "line_user_id IS NOT NULL"`。未連携 NULL 行を index から除外）
+    - テスト手法: users は既存 NOT NULL 列があるため行の用意は factory、LINE 列の書き込みは `update_column`（バリデーション回避で DB 制約に直接当てる）
 - [ ] 8.2a 連携コード発行・解除ロジックの実装（ドメイン）
   - 実施内容: 6 桁英数字コードの生成（一意・有効期限 10 分）と連携解除（line_user_id の NULL 化）をドメイン処理として実装する（仕様書 4.1.2）
   - テスト種別: model/unit spec（コード形式・期限・再発行時の置き換え）
