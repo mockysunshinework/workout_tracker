@@ -39,6 +39,15 @@ class User < ApplicationRecord
     update!(line_user_id: nil)
   end
 
+  def line_linked?
+    line_user_id.present?
+  end
+
+  # 表示・照合に使える（未消費かつ期限内の）連携コードがあるか
+  def line_link_code_active?
+    line_link_code.present? && line_link_code_expires_at.future?
+  end
+
   private
 
   def generate_line_link_code

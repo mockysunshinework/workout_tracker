@@ -1,0 +1,35 @@
+<h1>LINE 連携設定</h1>
+
+<p><%= link_to "ダッシュボードへ戻る", root_path %></p>
+
+<section>
+  <h2>連携状態</h2>
+  <% if current_user.line_linked? %>
+    <p>連携済み</p>
+    <%= button_to "連携を解除", settings_line_path, method: :delete,
+                  data: { turbo_confirm: "LINE 連携を解除しますか？（記録は削除されません）" } %>
+  <% else %>
+    <p>未連携</p>
+  <% end %>
+</section>
+
+<% unless current_user.line_linked? %>
+  <section>
+    <h2>連携手順</h2>
+    <ol>
+      <li>下のボタンで連携コードを発行する</li>
+      <li>LINE で Bot（WORKOUT TRACKER）を友だち追加する</li>
+      <li>トーク画面に連携コードを送信する</li>
+    </ol>
+
+    <% if current_user.line_link_code_active? %>
+      <p>
+        連携コード: <strong><%= current_user.line_link_code %></strong>
+        （有効期限: <%= l current_user.line_link_code_expires_at, format: :short %>）
+      </p>
+    <% end %>
+
+    <%= button_to current_user.line_link_code_active? ? "連携コードを再発行" : "連携コードを発行",
+                  link_code_settings_line_path %>
+  </section>
+<% end %>

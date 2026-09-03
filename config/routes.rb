@@ -19,6 +19,13 @@ Rails.application.routes.draw do
   end
   resources :exercises, only: [ :index, :create, :update, :destroy ]
 
+  # LINE 連携設定（SPEC 4.4 画面 6）: 表示 / 解除 / コード発行
+  namespace :settings do
+    resource :line, only: [ :show, :destroy ], controller: "line" do
+      post :link_code
+    end
+  end
+
   # LINE プラットフォームからの Webhook 受信（SPEC 4.2.4 / 8 章）
   post "webhooks/line", to: "line_webhooks#create", as: :webhooks_line
 
