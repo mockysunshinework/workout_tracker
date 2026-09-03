@@ -1,6 +1,7 @@
 # Stage 1 実装計画（plan.md）
 
-- 根拠仕様書: `~/plans/SPEC-workout-tracker-20260723.md`（版 2.0 確定。以下「仕様書」）
+- 根拠仕様書: `~/plans/SPEC-workout-tracker-20260723.md`（版 3.0 確定。以下「仕様書」）
+- **方針変更（2026-09-03・ユーザー承認）**: Web 認証を LINE Login に一本化し、アカウントの主体を LINE アカウントとした（仕様書 版 3.0）。メール＋パスワード認証（2 章）と連携コード方式（8.1〜8.2b）は廃止。経緯・比較した選択肢・確認した公式ドキュメントは `~/plans/DECISION-line-login-unification-20260903.md`。完了済み項目は当時の記録として残し、撤去と置き換えの作業は 8 章に置く
 - 対象: 仕様書の Stage 1（F-01〜F-07）のみ。Stage 2・Stage 3 の作業は含めない
 - 進め方: ステップは依存関係順。完了したステップは `- [x]` に更新し、常に「どこまで終わり、次はどれか」を本ファイルで判断する
 - 表記: 各ステップは「実施内容 → 完了条件」。必要に応じて対象（ファイル・テーブル・画面・ルート・テスト種別）を付記
@@ -25,6 +26,8 @@
   - 完了条件: `/up` が 200 を返す
 
 ## 2. 認証（F-01）
+
+> **注（2026-09-03）**: 本章の成果（メール＋パスワード認証・会員登録画面・パスワードリセット）は仕様書 版 3.0 で廃止が確定した。以下は当時の記録として残す。撤去と LINE Login への置き換えは 8.5〜8.8 で行う（Devise 自体と 2.1 の導入は残る）
 
 - [x] 2.1 Devise の導入
   - 実施内容: Gemfile に `devise` を追加し、`rails g devise:install` を実行、初期設定（default_url_options 等）を行う
@@ -328,7 +331,9 @@
   - 完了条件: 再送設定が有効になっている
   - 経緯（2026-09-01）: コンソールの「Webhook の利用」「Webhook の再送」トグルは **Webhook URL を登録するまで表示されない**ことを実画面で確認。URL は ngrok 等の公開 URL（12.1 の冒頭ステップ）が必要なため、**12.1 と同時に実施する**（項目自体は変更なし・実施タイミングの注記のみ）
 
-## 8. LINE アカウント連携（F-02）
+## 8. LINE アカウント＝ユーザー（F-01 / F-02・仕様書 版 3.0）
+
+> **方針変更（2026-09-03・ユーザー承認）**: 本章は当初「Web アカウントに LINE を後から紐付ける連携コード方式（旧 F-02）」として 8.1〜8.2b を実装したが、ユーザーの意図（友だち追加だけで記録が始まり、Web は同じアカウントを PC で詳しく見る画面。「LINE 専用ユーザー」という区分は不要）を確認した結果、**アカウントの主体を LINE アカウントとし、Web 認証を LINE Login に一本化**することにした。メール＋パスワード認証（2 章）と連携コード（8.1 の一部・8.2a・8.2b）は撤去する。経緯・比較した 3 案・確認した公式ドキュメント・横展開の調査結果は `~/plans/DECISION-line-login-unification-20260903.md` を参照。8.1〜8.2b の記録は当時の判断として残す
 
 - [x] 8.1 users への LINE 関連カラム追加
   - 実施内容: `line_user_id`（unique・NOT NULL 行のみの部分 index）、`line_link_code`（unique）、`line_link_code_expires_at`、`line_blocked`（default false）を追加する（仕様書 4.5）
@@ -337,6 +342,7 @@
   - 実施結果（2026-09-01）: `db/migrate/20260901055350_add_line_columns_to_users.rb` を作成。`spec/db/users_line_columns_spec.rb`（5 examples）で一意制約（同一 line_user_id / line_link_code の拒否・NULL 同士の共存）と line_blocked の DB default・NOT NULL を検証
     - line_user_id は仕様どおり **NOT NULL 行のみの部分 unique index**（`where: "line_user_id IS NOT NULL"`。未連携 NULL 行を index から除外）
     - テスト手法: users は既存 NOT NULL 列があるため行の用意は factory、LINE 列の書き込みは `update_column`（バリデーション回避で DB 制約に直接当てる）
+  - **版 3.0 での扱い（2026-09-03）**: `line_user_id` と `line_blocked` は存続（line_user_id は 8.5 で NOT NULL 化）。`line_link_code` / `line_link_code_expires_at` は 8.5 で削除
 - [x] 8.2a 連携コード発行・解除ロジックの実装（ドメイン）
   - 実施内容: 6 桁英数字コードの生成（一意・有効期限 10 分）と連携解除（line_user_id の NULL 化）をドメイン処理として実装する（仕様書 4.1.2）
   - テスト種別: model/unit spec（コード形式・期限・再発行時の置き換え）
@@ -349,6 +355,7 @@
   - レビュー確認（2026-09-02・`@claude` メンションレビュー）: ブロッカーなし・approve 相当の表明。コメント 2 件とも本 PR では修正不要
     - 「解除後も**期限内の**コードが残る」: 正当な観察（「期限切れは無害」より正確）。ただしコードを知るのは本人のみで実害は低く、仕様 4.1.2 も解除を NULL 化とだけ定義。**8.3 の検討事項として引き継ぎ**
     - 「リトライ上限到達時は例外が伝播」: 5 連続衝突は天文学的確率のため 500 で妥当。8.2b で呼び出し側の扱いを確認
+  - **版 3.0 での扱い（2026-09-03）**: 連携コードの廃止により `issue_line_link_code!` / `unlink_line!` / 関連定数と model spec は 8.6 で削除
 - [x] 8.2b LINE 連携設定画面の実装（UI）
   - 実施内容: 連携コード発行操作・連携状態表示・連携解除操作の画面を実装する
   - 対象: ルート `/settings/line`（仕様書 4.4 画面 6） / テスト種別: request spec
@@ -359,15 +366,34 @@
     - request spec 9 examples: 認証ガード / 状態表示の分岐 / 期限内コードの表示・**期限切れコードの非表示** / 発行→リダイレクト先での表示 / 再発行の置き換え / 解除の NULL 化 / 解除ボタンの turbo_confirm
     - 8.2a レビューで引き継いだ「リトライ枯渇例外の扱い」: 呼び出し側では rescue しない（天文学的確率であり、発生時は一時障害として 500 が妥当。7.6 のエラー分類と同じ整理）
     - Brakeman 実行（コントローラ追加のため）: 警告 0
-- [ ] 8.3 Webhook での連携コード照合と総当たり対策
-  - 実施内容: 連携コード形式のメッセージを照合し `line_user_id` を保存、完了/失敗（期限切れ・不一致）を返信する。同一 LINE ユーザーの照合失敗 5 回で一定時間ロックする（仕様書 4.1.2。ロック時間・保持方法はここで決定）
-  - 検討事項（2026-09-02・PR #57 レビューから引き継ぎ）: 照合成功時のコード失効に加え、**連携解除時に未消費の期限内コードも失効させるか**をここで決定する（現状 `unlink_line!` は line_user_id の NULL 化のみ）
-  - テスト種別: request spec（成功・期限切れ・不一致・ロック）
-  - 完了条件: 4 ケースの spec が通る
-- [ ] 8.4 follow / unfollow イベント処理
-  - 実施内容: follow は未連携（挨拶＋連携手順）と連携済み再追加（`line_blocked` を false に戻し復帰挨拶）で分岐、unfollow は `line_blocked` を true にする（仕様書 4.2.1。記録は削除しない）
-  - テスト種別: request spec（未連携 follow / 再追加 follow / unfollow）
-  - 完了条件: 3 ケースの spec が通る（フラグの遷移を含む）
+  - **版 3.0 での扱い（2026-09-03）**: 本項目の実装はブランチ `feat/f02-line-settings-screen` に**未コミット**のまま方針変更を迎えた。画面ごと廃止となるが、**ユーザー判断（2026-09-03）で記録としてコミット**した（commit 2896d0a）。撤去は 8.8 で行う
+- [ ] 8.3 【確認・決定】LINE Login チャネルの作成と資格情報の設定
+  - 実施内容: LINE Developers コンソールで、既存の Messaging API チャネル「WORKOUT TRACKER」と**同一プロバイダー**に LINE Login チャネルを作成する（ユーザー操作。仕様書 4.1.2。同一プロバイダーでないと userId が一致せず Bot と Web が別ユーザーになる）。コールバック URL に開発用を登録し、チャネル ID・チャネルシークレットを Rails credentials（`line_login.channel_id` / `line_login.channel_secret`。7.2 と同方式）に格納する
+  - 確認事項: コールバック URL に `http://localhost:3000/...` を登録できるか（できなければ 12.1 と同じトンネル URL を使う）
+  - 完了条件: credentials の presence 確認が両方 true（値は表示しない）。同一プロバイダー配下であることをコンソールで確認済み
+- [ ] 8.4 【確認・決定】OpenID Connect クライアントの選定と検証（仕様書 10 章 #16）
+  - 実施内容: `omniauth_openid_connect`（＋ OmniAuth 2 系に必要な `omniauth-rails_csrf_protection`）を候補として、LINE の discovery 文書（`https://access.line.me/.well-known/openid-configuration`）で認可コードフロー〜ID トークン検証が通るかを開発環境で検証する。通らなければ自前の最小 OIDC クライアント（認可 URL 生成・コード交換・ID トークン検証）に切り替える。**gem 追加はユーザー承認を得る**（CLAUDE.md）。`omniauth-line` は 2021 年で更新停止のため候補にしない
+  - 完了条件: 開発環境のブラウザで LINE Login → コールバックまで到達し、userId と表示名が取得できる。選定結果を仕様書 10 章 #16 に反映
+- [ ] 8.5 users テーブルの再定義（DB）
+  - 実施内容: `email` `encrypted_password` `reset_password_token` `reset_password_sent_at` `line_link_code` `line_link_code_expires_at` を削除し、`line_user_id` を NOT NULL 化して部分 index を通常の unique index に張り替える（仕様書 4.5）。既存の開発 DB の行は email 前提で line_user_id が NULL のため、`db:reset` で作り直す（**開発データのみ・本番未稼働**。実行前にユーザーへ確認する）
+  - 対象: `users` テーブル / テスト種別: `spec/db/users_line_columns_spec.rb` の書き換え
+  - 完了条件: マイグレーション成功、line_user_id の NOT NULL と一意制約の spec が通る
+  - 順序の注意: CLAUDE.md「既存カラムの削除は参照が残っていないことを確認してから」に従い、8.6〜8.8 で参照を先に外してから本項目を実行する順序にしてもよい。着手時に決める
+- [ ] 8.6 User モデルの再定義（ドメイン）
+  - 実施内容: `devise :omniauthable, :rememberable`（`omniauth_providers: [:line]`）に変更し、`line_user_id` をキーにした find_or_create（仕様書 4.1.1。表示名 nil 時はフォールバック名 `LINE ユーザー`、既存ユーザーの表示名更新は LINE Login 時のみ）をクラスメソッドとして実装する。連携コード関連（`issue_line_link_code!` `unlink_line!` `line_linked?` `line_link_code_active?` と定数）を削除し、factory を line_user_id 前提に書き換える
+  - 対象: `app/models/user.rb` / テスト種別: model spec
+  - 完了条件: model spec（新規作成・既存取得・フォールバック名・表示名更新の有無・line_user_id 必須と一意）が通り、削除したメソッドの spec が残っていない
+- [ ] 8.7 Web ログインの LINE Login 化（UI）
+  - 実施内容: `devise_for :users, skip: [:registrations, :passwords]` にコールバックコントローラを加え、コールバックで 8.6 の find_or_create → `sign_in_and_redirect`。ログイン画面を「LINE でログイン」ボタンのみに差し替える（仕様書 4.4 画面 1）。`app/views/devise/registrations`、`configure_permitted_parameters`、letter_opener 設定（2.4）、`spec/requests/password_reset_spec.rb` を撤去し、`spec/requests/authentication_spec.rb` を OmniAuth テストモードで書き直す。あわせてリポジトリの `CLAUDE.md`（技術スタックの認証行・プロジェクト概要）を更新する
+  - テスト種別: request spec（未ログイン→ログイン画面 / コールバック成功→ダッシュボード / 失敗→ログイン画面にエラー / ログアウト）
+  - 完了条件: 上記 spec が通り、ブラウザで LINE Login → ダッシュボード表示が成立する。Brakeman 警告 0
+- [ ] 8.8 連携コード関連の撤去
+  - 実施内容: `/settings/line` のルート・コントローラ・ビュー・spec、ダッシュボードの導線（8.2b が main に取り込まれている場合のみ）を削除する。仕様書 4.4 画面 6 は版 3.0 で削除済み
+  - 完了条件: `git grep line_link_code` が 0 件、全 spec green
+- [ ] 8.9 follow / unfollow イベント処理（旧 8.4）
+  - 実施内容: follow は Get profile API で表示名を取得（短いタイムアウト・失敗時はフォールバック名。仕様書 2.3 の例外）し、8.6 の find_or_create で User を作成、または既存なら `line_blocked` を false に戻し、新規/復帰で挨拶文を分けて返信する。unfollow は `line_blocked` を true にする（仕様書 4.1.1 / 4.2.1。記録は削除しない）
+  - テスト種別: request spec（新規 follow で User 作成 / 再追加 follow で復帰 / プロフィール取得失敗でフォールバック名 / unfollow。LINE API はモック）
+  - 完了条件: 4 ケースの spec が通る（フラグの遷移を含む）
 
 ## 9. 記録入力の実装（F-03 / F-04）
 
@@ -387,7 +413,7 @@
   - テスト種別: request spec（LINE API はモック）
   - 完了条件: 記録メッセージ→保存→エコーバックの spec が通る（複数行・自重・同日追記の採番継続を含む）
 - [ ] 9.5 エラー応答の実装
-  - 実施内容: パース失敗（失敗行とフォーマット例を返信、全行不保存）、未連携ユーザー（連携手順案内）、その他テキスト（ヘルプ案内）を実装する（仕様書 4.2.1 / 4.2.3）
+  - 実施内容: パース失敗（失敗行とフォーマット例を返信、全行不保存）、User 未作成の送信者（仕様書 4.1.1 の自己修復: find_or_create してから通常処理。版 3.0 で「未連携ユーザーへの連携手順案内」から変更）、その他テキスト（ヘルプ案内）を実装する（仕様書 4.2.1 / 4.2.3）
   - テスト種別: request spec
   - 完了条件: 3 ケースの spec が通り、パース失敗時に DB へ一切保存されないことを確認
 - [ ] 9.6 Reply API 呼び出し条件の実装
@@ -445,14 +471,14 @@
 ## 12. Stage 1 統合確認
 
 - [ ] 12.1 実機 E2E 確認
-  - 実施内容: ngrok / Cloudflare Tunnel で Webhook を公開し、実機 LINE で一連の流れを確認する: 友だち追加 → 連携コード連携 → 定型入力で記録 → エコーバック → 表記ゆれ入力の解決 → 未知種目の候補提案〜確定 → `今日`/`履歴` → Web ダッシュボードでグラフ・記録編集 → ブロック/再追加のフラグ遷移
+  - 実施内容: ngrok / Cloudflare Tunnel で Webhook を公開し、実機 LINE で一連の流れを確認する: 友だち追加（User 自動作成・挨拶）→ 定型入力で記録 → エコーバック → 表記ゆれ入力の解決 → 未知種目の候補提案〜確定 → `今日`/`履歴` → PC ブラウザで LINE Login（QR）→ Web ダッシュボードで同じ記録のグラフ・編集 → ブロック/再追加のフラグ遷移
   - 完了条件: 上記の全操作が実機で仕様どおり動作する
 - [ ] 12.2 テスト・静的解析の全体実行
   - 実施内容: `bundle exec rspec`（全件）、`bundle exec rubocop`、`bin/brakeman` を実行し、失敗・重大指摘を解消する
   - 完了条件: すべて成功（許容する指摘があれば理由を記録）
 - [ ] 12.3 仕様書との照合
-  - 実施内容: 仕様書 4 章（4.1〜4.5）と 8 章の項目を 1 つずつ照合する: 機能 F-01〜F-07、画面 6 つ、テーブル 6 つ（users / exercises / workouts / workout_sets / pending_workout_entries / processed_line_events）と各 unique 制約、Webhook 応答分類（400/200/500）、冪等性、Reply 呼び出し条件、総当たりロック、line_blocked 遷移
+  - 実施内容: 仕様書 4 章（4.1〜4.5）と 8 章の項目を 1 つずつ照合する: 機能 F-01〜F-07（F-01/F-02 は版 3.0 の定義）、画面 5 つ、テーブル 6 つ（users / exercises / workouts / workout_sets / pending_workout_entries / processed_line_events）と各 unique 制約、Webhook 応答分類（400/200/500）、冪等性、Reply 呼び出し条件、LINE Login の同一プロバイダー要件と state/nonce 検証、line_blocked 遷移
   - 完了条件: 全項目が実装済み、または差異が理由付きで記録されている
 - [ ] 12.4 未完了項目・未確定事項の棚卸し
-  - 実施内容: 本ファイルの未チェック項目と、仕様書 10 章の未確定事項（Stage 1 対象: #3 #4 #5 #9 #10 #12 の解消確認。対象外: #1 ホスティング・#2 AI・#6 スケジューラ・#7 プロンプト・#8 本番メール・#11 トレーニング設定）を棚卸しし、残項目と対応方針を記録する
+  - 実施内容: 本ファイルの未チェック項目と、仕様書 10 章の未確定事項（Stage 1 対象: #3 #4 #5 #9 #10 #12 #16 の解消確認、#15 退会手段の方針決定。対象外: #1 ホスティング・#2 AI・#6 スケジューラ・#7 プロンプト・#11 トレーニング設定・#14 Web 先行ユーザーの友だち状態。#8 本番メールは版 3.0 で不要化）を棚卸しし、残項目と対応方針を記録する
   - 完了条件: 残項目リストが本ファイル末尾に記録され、Stage 1 完了の判断材料が揃っている
