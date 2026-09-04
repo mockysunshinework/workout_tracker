@@ -367,10 +367,15 @@
     - 8.2a レビューで引き継いだ「リトライ枯渇例外の扱い」: 呼び出し側では rescue しない（天文学的確率であり、発生時は一時障害として 500 が妥当。7.6 のエラー分類と同じ整理）
     - Brakeman 実行（コントローラ追加のため）: 警告 0
   - **版 3.0 での扱い（2026-09-03）**: 本項目の実装はブランチ `feat/f02-line-settings-screen` に**未コミット**のまま方針変更を迎えた。画面ごと廃止となるが、**ユーザー判断（2026-09-03）で記録としてコミット**した（commit 2896d0a）。撤去は 8.8 で行う
-- [ ] 8.3 【確認・決定】LINE Login チャネルの作成と資格情報の設定
+- [x] 8.3 【確認・決定】LINE Login チャネルの作成と資格情報の設定
   - 実施内容: LINE Developers コンソールで、既存の Messaging API チャネル「WORKOUT TRACKER」と**同一プロバイダー**に LINE Login チャネルを作成する（ユーザー操作。仕様書 4.1.2。同一プロバイダーでないと userId が一致せず Bot と Web が別ユーザーになる）。コールバック URL に開発用を登録し、チャネル ID・チャネルシークレットを Rails credentials（`line_login.channel_id` / `line_login.channel_secret`。7.2 と同方式）に格納する
   - 確認事項: コールバック URL に `http://localhost:3000/...` を登録できるか（できなければ 12.1 と同じトンネル URL を使う）
   - 完了条件: credentials の presence 確認が両方 true（値は表示しない）。同一プロバイダー配下であることをコンソールで確認済み
+  - 実施結果（2026-09-04）: WORKOUT TRACKER と**同一プロバイダー**に LINE Login チャネル（アプリタイプ: ウェブアプリ）を作成（ユーザー操作・コンソールで同一プロバイダー配下を確認済み）。チャネルは作成後にプロバイダーを移動できないため、この確認は必須
+    - **コールバック URL `http://localhost:3000/users/auth/line/callback` は http の localhost でも登録できた**（公式ドキュメントに明記が見つからなかったため実機で確認）。パスは Devise omniauthable の既定（provider 名 `line`）に合わせたもので、8.4 の gem 選定で変わる場合はコンソールで追加登録する（複数登録可）
+    - 資格情報は `line_login.channel_id` / `line_login.channel_secret` に格納（値はクォートで囲み文字列として保存。channel_id は数字のみのため整数化を避ける）。検証は `Rails.application.credentials.dig(:line_login, ...)` の presence 確認で両方 true・両方 String、既存の `line.*` も無傷。差分は暗号化済み `credentials.yml.enc` のみ、`master.key` は .gitignore（`/config/*.key`）で除外済み
+    - LINE Login チャネルの「LINE 公式アカウント連携（ボットリンク）」は未設定。Stage 1 の必須ではないため（ログイン画面で友だち追加を促す用途。必要になれば有効化のみで対応可）
+    - TDD: 環境構築（アプリ上の振る舞いなし）のため RED/GREEN は省略（CLAUDE.md の例外）
 - [ ] 8.4 【確認・決定】OpenID Connect クライアントの選定と検証（仕様書 10 章 #16）
   - 実施内容: `omniauth_openid_connect`（＋ OmniAuth 2 系に必要な `omniauth-rails_csrf_protection`）を候補として、LINE の discovery 文書（`https://access.line.me/.well-known/openid-configuration`）で認可コードフロー〜ID トークン検証が通るかを開発環境で検証する。通らなければ自前の最小 OIDC クライアント（認可 URL 生成・コード交換・ID トークン検証）に切り替える。**gem 追加はユーザー承認を得る**（CLAUDE.md）。`omniauth-line` は 2021 年で更新停止のため候補にしない
   - 完了条件: 開発環境のブラウザで LINE Login → コールバックまで到達し、userId と表示名が取得できる。選定結果を仕様書 10 章 #16 に反映
