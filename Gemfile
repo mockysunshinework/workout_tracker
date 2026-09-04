@@ -27,6 +27,11 @@ gem "devise-i18n"
 # Official LINE Messaging API SDK (7.3). v2 line; the 1.x interface is incompatible
 gem "line-bot-api", "~> 2.10"
 
+# LINE Login via OpenID Connect for web sign-in (8.4). OmniAuth 2 rejects GET on the
+# request phase, so the CSRF-protection gem is required for the POST-based login button
+gem "omniauth_openid_connect", "~> 0.8"
+gem "omniauth-rails_csrf_protection", "~> 2.0"
+
 # Use Active Model has_secure_password [https://guides.rubyonrails.org/active_model_basics.html#securepassword]
 # gem "bcrypt", "~> 3.1.7"
 
