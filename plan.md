@@ -392,6 +392,8 @@
   - 対象: `users` テーブル / テスト種別: `spec/db/users_line_columns_spec.rb` の書き換え
   - 完了条件: マイグレーション成功、line_user_id の NOT NULL と一意制約の spec が通る
   - 順序の注意: CLAUDE.md「既存カラムの削除は参照が残っていないことを確認してから」に従い、8.6〜8.8 で参照を先に外してから本項目を実行する順序にしてもよい。着手時に決める
+  - **決定（2026-09-06・ユーザー承認）: 8.8 を先行し、8.5・8.6・8.7 は 1 ブランチ・1 PR で実装する**（plan.md 上は 3 項目とも残し、それぞれに記録する）。理由: 8.5 の列削除と NOT NULL 化は Devise の database_authenticatable / validatable・登録画面・factory を壊し、逆に 8.6/8.7 を先にすると email の NOT NULL default "" ＋ unique index が 2 人目の LINE ユーザー作成で衝突する。main は CI green 必須（Ruleset）のため途中で赤くなる分割はマージできない。8.8 は純粋な撤去で単独 green のため先行させる
+  - **開発 DB の扱い（2026-09-06・ユーザー承認）**: 既存の開発ユーザー 1 件（email 前提・line_user_id NULL）があるため、マイグレーション適用時に `db:reset` で作り直す（本番未稼働。プリセット種目は seed で復元）
 - [ ] 8.6 User モデルの再定義（ドメイン）
   - 実施内容: `devise :omniauthable, :rememberable`（`omniauth_providers: [:line]`）に変更し、`line_user_id` をキーにした find_or_create（仕様書 4.1.1。表示名 nil 時はフォールバック名 `LINE ユーザー`、既存ユーザーの表示名更新は LINE Login 時のみ）をクラスメソッドとして実装する。連携コード関連（`issue_line_link_code!` `unlink_line!` `line_linked?` `line_link_code_active?` と定数）を削除し、factory を line_user_id 前提に書き換える
   - 対象: `app/models/user.rb` / テスト種別: model spec
@@ -400,9 +402,15 @@
   - 実施内容: `devise_for :users, skip: [:registrations, :passwords]` にコールバックコントローラを加え、コールバックで 8.6 の find_or_create → `sign_in_and_redirect`。ログイン画面を「LINE でログイン」ボタンのみに差し替える（仕様書 4.4 画面 1）。`app/views/devise/registrations`、`configure_permitted_parameters`、letter_opener 設定（2.4）、`spec/requests/password_reset_spec.rb` を撤去し、`spec/requests/authentication_spec.rb` を OmniAuth テストモードで書き直す。あわせてリポジトリの `CLAUDE.md`（技術スタックの認証行・プロジェクト概要）を更新する
   - テスト種別: request spec（未ログイン→ログイン画面 / コールバック成功→ダッシュボード / 失敗→ログイン画面にエラー / ログアウト）
   - 完了条件: 上記 spec が通り、ブラウザで LINE Login → ダッシュボード表示が成立する。Brakeman 警告 0
-- [ ] 8.8 連携コード関連の撤去
+- [x] 8.8 連携コード関連の撤去
   - 実施内容: `/settings/line` のルート・コントローラ・ビュー・spec、ダッシュボードの導線（8.2b が main に取り込まれている場合のみ）を削除する。仕様書 4.4 画面 6 は版 3.0 で削除済み
   - 完了条件: `git grep line_link_code` が 0 件、全 spec green
+  - 実施結果（2026-09-06・8.5 の決定により先行実施）: 削除したもの — `Settings::LineController`、`app/views/settings/line/show.html.erb`、`spec/requests/settings_line_spec.rb`、routes の `namespace :settings` ブロック、ダッシュボードの「LINE 連携設定」リンク、`User` の連携コード関連（`issue_line_link_code!` / `unlink_line!` / `line_linked?` / `line_link_code_active?` / `generate_line_link_code` と定数 3 つ）、`spec/models/user_spec.rb` の連携コード 4 examples と解除 1 example
+    - TDD: RED として `spec/routing/settings_line_spec.rb`（3 examples。GET/POST/DELETE の旧ルートが `not_to be_routable`）を追加し「routes to settings/line#show 等」で失敗することを確認 → 撤去で GREEN。廃止機能の再導入を検知する回帰ガードとして残す
+    - 残したもの（8.5 で扱う）: `line_link_code` / `line_link_code_expires_at` 列と `spec/db/users_line_columns_spec.rb` の一意制約 example（列がまだ存在し DB 制約の検証として正しいため）。`rails_helper` の `TimeHelpers` include は他項目で使う見込みのため残置
+    - 完了条件の `git grep line_link_code`: app / config / spec（db・routing 以外）で 0 件。残る該当は plan.md・docs・schema・migration・DB spec のみ（列の存在を反映した正当なもの）
+    - 全 spec green（228 examples、0 failures。削除前 239 から request 9 ＋ model 5 減、routing 3 増＝ −14 ＋ 3）。RuboCop 指摘なし。Brakeman 警告 0（コントローラ削除のため実行）
+  - レビュー指摘に対応（2026-09-06・`@claude` メンションレビュー・approve 相当の表明、ブロッカーなし）: 「削除した model spec の内訳が 6 ではなく 5（発行 4 ＋ 解除 1）」は**正当**（`git show main:spec/models/user_spec.rb` で `it` 8 件 → 現在 3 件を確認）。合計 228 は正しく、内訳の記述のみ誤り。上記の記述と PR 本文を訂正した
 - [ ] 8.9 follow / unfollow イベント処理（旧 8.4）
   - 実施内容: follow は Get profile API で表示名を取得（短いタイムアウト・失敗時はフォールバック名。仕様書 2.3 の例外）し、8.6 の find_or_create で User を作成、または既存なら `line_blocked` を false に戻し、新規/復帰で挨拶文を分けて返信する。unfollow は `line_blocked` を true にする（仕様書 4.1.1 / 4.2.1。記録は削除しない）
   - テスト種別: request spec（新規 follow で User 作成 / 再追加 follow で復帰 / プロフィール取得失敗でフォールバック名 / unfollow。LINE API はモック）
