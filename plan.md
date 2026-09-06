@@ -1,6 +1,6 @@
 # Stage 1 実装計画（plan.md）
 
-- 根拠仕様書: `~/plans/SPEC-workout-tracker-20260723.md`（版 3.0 確定。以下「仕様書」）
+- 根拠仕様書: `~/plans/SPEC-workout-tracker-20260723.md`（版 3.1 確定。以下「仕様書」）
 - **方針変更（2026-09-03・ユーザー承認）**: Web 認証を LINE Login に一本化し、アカウントの主体を LINE アカウントとした（仕様書 版 3.0）。メール＋パスワード認証（2 章）と連携コード方式（8.1〜8.2b）は廃止。経緯・比較した選択肢・確認した公式ドキュメントは `~/plans/DECISION-line-login-unification-20260903.md`。完了済み項目は当時の記録として残し、撤去と置き換えの作業は 8 章に置く
 - 対象: 仕様書の Stage 1（F-01〜F-07）のみ。Stage 2・Stage 3 の作業は含めない
 - 進め方: ステップは依存関係順。完了したステップは `- [x]` に更新し、常に「どこまで終わり、次はどれか」を本ファイルで判断する
@@ -376,9 +376,17 @@
     - 資格情報は `line_login.channel_id` / `line_login.channel_secret` に格納（値はクォートで囲み文字列として保存。channel_id は数字のみのため整数化を避ける）。検証は `Rails.application.credentials.dig(:line_login, ...)` の presence 確認で両方 true・両方 String、既存の `line.*` も無傷。差分は暗号化済み `credentials.yml.enc` のみ、`master.key` は .gitignore（`/config/*.key`）で除外済み
     - LINE Login チャネルの「LINE 公式アカウント連携（ボットリンク）」は未設定。Stage 1 の必須ではないため（ログイン画面で友だち追加を促す用途。必要になれば有効化のみで対応可）
     - TDD: 環境構築（アプリ上の振る舞いなし）のため RED/GREEN は省略（CLAUDE.md の例外）
-- [ ] 8.4 【確認・決定】OpenID Connect クライアントの選定と検証（仕様書 10 章 #16）
+- [x] 8.4 【確認・決定】OpenID Connect クライアントの選定と検証（仕様書 10 章 #16）
   - 実施内容: `omniauth_openid_connect`（＋ OmniAuth 2 系に必要な `omniauth-rails_csrf_protection`）を候補として、LINE の discovery 文書（`https://access.line.me/.well-known/openid-configuration`）で認可コードフロー〜ID トークン検証が通るかを開発環境で検証する。通らなければ自前の最小 OIDC クライアント（認可 URL 生成・コード交換・ID トークン検証）に切り替える。**gem 追加はユーザー承認を得る**（CLAUDE.md）。`omniauth-line` は 2021 年で更新停止のため候補にしない
   - 完了条件: 開発環境のブラウザで LINE Login → コールバックまで到達し、userId と表示名が取得できる。選定結果を仕様書 10 章 #16 に反映
+  - 決定（2026-09-04・ユーザー承認）: **`omniauth_openid_connect` 0.8.0 ＋ `omniauth-rails_csrf_protection` 2.0.1 を採用**（案 B「omniauth-oauth2 ＋ 自前 LINE strategy」は不採用: ID トークン検証を自前で書く保守対象が増えるため）。依存として openid_connect 2.5.0 / rack-oauth2 / json-jwt / swd / webfinger / validate_url / faraday 等 約 20 gem が入る（重さは承知の上で採用。仕様書 10 章 #16 に反映・版 3.1）
+  - 実施結果（2026-09-04）: 開発環境の一時 spike（初期化子で OmniAuth ミドルウェアを直接構成＋開発限定ルート＋auth hash を表示するコントローラ。**記録後に削除済み**、残るのは Gemfile / Gemfile.lock のみ）で、ブラウザから LINE Login → コールバックまで到達し、`uid`（`U` で始まる userId）・`info.name`（表示名）・`info.image` を取得できた
+    - **LINE 固有の設定 3 点が必要**（8.7 の Devise 設定にそのまま持ち込む）: (1) `client_signing_alg: :HS256` — LINE の Web ログイン ID トークンは HS256（チャネルシークレット署名）で、discovery が広告する ES256 と食い違う。strategy はトークンの alg を見て HS 系ならシークレットで検証するため `discovery: true` と両立し、明示することで alg 混同を拒否できる（実測: alg=HS256 で検証成功） (2) `client_auth_method: :other` — LINE のトークンエンドポイントは client_id/client_secret をフォーム本文で受ける（rack-oauth2 の既定 Basic では不可。`:other` で本文送信になることをソースで確認） (3) `pkce: true` — LINE は S256 対応、通ることを実測
+    - 共通設定: `name: :line`（コールバックは `/users/auth/line/callback`。`OmniAuth.config.path_prefix = "/users/auth"` は Devise が既定で設定する）、`issuer: "https://access.line.me"`、`discovery: true`、`scope: [:openid, :profile]`、`response_type: :code`
+    - ID トークンのクレームは `sub / name / picture / iss / aud / exp / iat / nonce / amr`。nonce が往復していることを確認（strategy が検証）。userinfo を別途叩かなくても表示名は ID トークンから得られる
+    - **未検証**: この uid が Bot 側（Messaging API の follow/message の userId）と一致するかは、Webhook で userId を受け取れる 8.9 以降・12.1 の実機確認で照合する（同一プロバイダーの確認は 8.3 で済み）
+    - セキュリティチェック: `bundle check` OK、`bundler-audit check --update` で脆弱性なし。TDD: gem 導入と一時 spike のみ（アプリの振る舞いなし）のため RED/GREEN は省略
+    - spike の手順・構成・結果・8.7 への持ち込み設定の詳細は `docs/spike-line-login-oidc-20260904.md`
 - [ ] 8.5 users テーブルの再定義（DB）
   - 実施内容: `email` `encrypted_password` `reset_password_token` `reset_password_sent_at` `line_link_code` `line_link_code_expires_at` を削除し、`line_user_id` を NOT NULL 化して部分 index を通常の unique index に張り替える（仕様書 4.5）。既存の開発 DB の行は email 前提で line_user_id が NULL のため、`db:reset` で作り直す（**開発データのみ・本番未稼働**。実行前にユーザーへ確認する）
   - 対象: `users` テーブル / テスト種別: `spec/db/users_line_columns_spec.rb` の書き換え
