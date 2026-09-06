@@ -439,12 +439,13 @@
     - `LineMessages`（app/models）に返信文を集約: `input_guide`（記録フォーマットとコマンド案内。11.1 ヘルプで共用）・`welcome`・`welcome_back`
     - `User.follow_from_line!(line_user_id:, display_name:)` → `[user, :welcome | :welcome_back]`。`User.unfollow_from_line!(line_user_id:)` は既存ユーザーの `line_blocked` を true にするだけ（未登録なら作成もしない）
     - **仕様にない状況の判断**: Web（LINE Login）で先に作られた未ブロックのユーザーが友だち追加した場合は `:welcome`（LINE では初めてなので入力案内を返す。`:welcome_back` はブロック中だった場合のみ）
-    - **Get profile は新規ユーザーのときだけ呼ぶ**（`User.exists?` で事前判定。既存ユーザーの表示名は follow で再取得しない: 仕様書 4.1.1）。判定と作成の間の競合は fallback 名になるだけで無害
+    - **Get profile は新規ユーザーのときだけ呼ぶ**（`User.exists?` で事前判定。既存ユーザーの表示名は follow で再取得しない: 仕様書 4.1.1）。判定と作成の間の競合（同一 follow の再送が並行到達・LINE Login との初回同時接触）で起きるのは Get profile の重複呼び出し 1 回だけで、作成される User の名前には影響しない（`record_once` / `find_or_create_from_line!` が吸収する）
     - コントローラは `handle(event)` でイベント種別を振り分け、ドメインには SDK の型を渡さず `line_user_id` / `reply_token` / 表示名の素の値だけを渡す（仕様書 2.3 の境界）。返信は `record_once`（トランザクション）の外＝コミット後。message / postback は未対応のまま冪等 ID だけ記録（9 章で実装）
     - TDD: RED は `LineBot.fetch_display_name` / `reply`、`User.follow_from_line!` / `unfollow_from_line!` の NoMethodError → GREEN。spec は `spec/models/line_bot_spec.rb`（7: 200 / 200 以外 / 通信例外 ×2 API、タイムアウト設定）、`spec/models/user_spec.rb`（+5: follow 新規・復帰・Web 先行、unfollow 既存・未登録）、`spec/requests/line_follow_unfollow_spec.rb`（8: 新規 follow・ブロック中の再追加（Get profile を呼ばない）・プロフィール失敗→フォールバック名・**返信がコミット後**・返信 400 でも保存＋200・再送は作成も返信もしない・unfollow・未登録 unfollow）。REFACTOR: 挨拶の選択を `public_send` から明示分岐へ
     - 既存 `spec/requests/line_webhooks_spec.rb`（7.4〜7.6）は follow 本文を使うため、8.9 以降は Get profile / Reply が走る。実通信を避けるため `LineBot.client` を固定応答の double に差し替えた（本 spec の検証対象は受信・署名・冪等性・応答分類）
     - 品質・セキュリティ: RSpec 全件 257 examples 0 failures、RuboCop 指摘なし、Brakeman 警告 0（Webhook 処理の変更のため実行）
     - 未実施: 実機の LINE での follow / unfollow 確認は 12.1（トンネル公開が必要）で行う
+    - レビュー指摘に対応（2026-09-06・`@claude` メンションレビュー・approve 表明、ブロッカーなし。2 件とも検証のうえ修正不要と判断）: (1) 「`User.exists?` 事前判定と作成の間の TOCTOU で Get profile が複数回呼ばれ、実害はフォールバック名」は**一部正当**。競合自体は存在するが、フォールバック名になる経路は無い（`exists?` が false の側は取得した表示名で作成、true の側は既存行の名前を維持。フォールバック名は Get profile 失敗時のみ）。実害は再送の並行到達時に Get profile が 1 回余分に走るだけで、`record_once` の unique 制約で業務処理は 1 回に収束する。判定を `record_once` の中へ移すと DB トランザクション中に外部 HTTP を呼ぶことになり仕様書 2.3（作成前に呼ぶ・短タイムアウト）に反するため現状維持。上記の「fallback 名になるだけ」という本記録の記述が不正確だったので訂正した (2) 「`LineBot` の `rescue StandardError` はタイプミス由来の `NoMethodError` も nil / false に丸める」は**正当**だが対応しない。SDK（line-bot-api 2.x の `HttpClient`）は自前で rescue せず `Net::OpenTimeout` / `Net::ReadTimeout` / `Errno::*` / `OpenSSL::SSL::SSLError` / `EOFError` / 200 応答の本文が JSON でない場合の `JSON::ParserError` 等をそのまま伝播させるため、列挙して絞ると想定外のクラスが 500 → 再送に化ける。仕様書 2.3「失敗時はフォールバック名で作成を続行」を優先し、warn ログに例外クラスを出して観測可能にする現行設計を維持。実装ミスは正常系の spec（`line_bot_spec` / request spec）で検出できる
 
 ## 9. 記録入力の実装（F-03 / F-04）
 
