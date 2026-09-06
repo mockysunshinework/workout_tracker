@@ -89,4 +89,61 @@ RSpec.describe User, type: :model do
       expect(User.where(line_user_id: line_user_id).count).to eq 1
     end
   end
+
+  # SPEC 4.2.1 follow / unfollow。挨拶の種別は呼び出し側（Webhook）が返信文を選ぶために返す
+  describe ".follow_from_line!" do
+    let(:line_user_id) { "U1234567890abcdef1234567890abcdef" }
+
+    it "未登録なら User を作成し、:welcome を返す" do
+      user = kind = nil
+      expect {
+        user, kind = User.follow_from_line!(line_user_id: line_user_id, display_name: "もとなが")
+      }.to change(User, :count).by(1)
+
+      expect(user.name).to eq "もとなが"
+      expect(user.line_blocked).to be false
+      expect(kind).to eq :welcome
+    end
+
+    it "ブロック中（unfollow 済み）の既存ユーザーなら line_blocked を false に戻し、:welcome_back を返す（記録は残る）" do
+      existing = create(:user, line_user_id: line_user_id, name: "以前の名前", line_blocked: true)
+      workout = create(:workout, user: existing)
+
+      user, kind = User.follow_from_line!(line_user_id: line_user_id, display_name: nil)
+
+      expect(user).to eq existing
+      expect(user.reload.line_blocked).to be false
+      expect(user.name).to eq "以前の名前"
+      expect(kind).to eq :welcome_back
+      expect(Workout.exists?(workout.id)).to be true
+    end
+
+    it "Web（LINE Login）で先に作られた未ブロックの既存ユーザーが友だち追加した場合は :welcome（初めての LINE 利用として案内する）" do
+      create(:user, line_user_id: line_user_id, line_blocked: false)
+
+      _user, kind = User.follow_from_line!(line_user_id: line_user_id, display_name: nil)
+
+      expect(kind).to eq :welcome
+    end
+  end
+
+  describe ".unfollow_from_line!" do
+    let(:line_user_id) { "U1234567890abcdef1234567890abcdef" }
+
+    it "既存ユーザーの line_blocked を true にする（記録は削除しない）" do
+      user = create(:user, line_user_id: line_user_id)
+      workout = create(:workout, user: user)
+
+      User.unfollow_from_line!(line_user_id: line_user_id)
+
+      expect(user.reload.line_blocked).to be true
+      expect(Workout.exists?(workout.id)).to be true
+    end
+
+    it "未登録の line_user_id なら何もしない（作成もしない）" do
+      expect {
+        User.unfollow_from_line!(line_user_id: line_user_id)
+      }.not_to change(User, :count)
+    end
+  end
 end

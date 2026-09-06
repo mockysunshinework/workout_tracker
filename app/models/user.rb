@@ -34,4 +34,22 @@ class User < ApplicationRecord
     # 負けた側は勝った側の行を返せばよい（同じ LINE アカウントなので結果は同じ）
     find_by!(line_user_id: line_user_id)
   end
+
+  # SPEC 4.2.1 follow（友だち追加）。[user, 挨拶の種別] を返す。
+  #   :welcome      新規作成、または Web（LINE Login）で先に作られていて LINE では初めて（未ブロック）
+  #   :welcome_back ブロック中（unfollow 済み）だった既存ユーザーの再追加。line_blocked を false に戻す
+  # 既存ユーザーの表示名は更新しない（follow 時は再取得しない: SPEC 4.1.1）
+  def self.follow_from_line!(line_user_id:, display_name:)
+    user = find_or_create_from_line!(line_user_id: line_user_id, display_name: display_name)
+    return [ user, :welcome ] unless user.line_blocked?
+
+    user.update!(line_blocked: false)
+    [ user, :welcome_back ]
+  end
+
+  # SPEC 4.2.1 unfollow（ブロック）。Push の送信失敗を抑止するためのフラグのみ立て、記録は削除しない。
+  # 未登録の line_user_id（Webhook 設置前に追加して即ブロック等）は作成もせず何もしない
+  def self.unfollow_from_line!(line_user_id:)
+    find_by(line_user_id: line_user_id)&.update!(line_blocked: true)
+  end
 end
