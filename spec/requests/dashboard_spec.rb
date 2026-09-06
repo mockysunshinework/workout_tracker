@@ -98,4 +98,14 @@ RSpec.describe "Dashboard", type: :request do
       expect(options).not_to include("他人の種目")
     end
   end
+
+  describe "ログアウト導線" do
+    before { sign_in user }
+
+    it "ログアウトボタンは 1 つだけ（footer の「ログイン中」表示とセットで置く。nav との重複はレビュー指摘で解消）" do
+      get root_path
+
+      expect(response.body.scan(destroy_user_session_path).size).to eq 1
+    end
+  end
 end

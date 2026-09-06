@@ -10,9 +10,6 @@ ja:
     attributes:
       user:
         name: 名前
-        password: パスワード
-        password_confirmation: パスワード（確認）
-        current_password: 現在のパスワード
         remember_me: ログインを記憶する
       exercise:
         name: 種目名
