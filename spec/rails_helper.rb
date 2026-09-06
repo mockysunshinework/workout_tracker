@@ -42,6 +42,11 @@ RSpec.configure do |config|
   # Devise helpers (e.g. sign_in) in request specs
   config.include Devise::Test::IntegrationHelpers, type: :request
 
+  # LINE Login は OmniAuth のテストモードで置き換える（SPEC 9 章: LINE API はモック化）。
+  # mock_auth[:line] を各 example が設定し、後片付けで消す
+  OmniAuth.config.test_mode = true
+  config.after { OmniAuth.config.mock_auth[:line] = nil }
+
   # Remove this line if you're not using ActiveRecord or ActiveRecord fixtures
   config.fixture_paths = [
     Rails.root.join('spec/fixtures')

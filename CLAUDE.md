@@ -10,9 +10,9 @@
 
 筋トレの記録を管理する Web アプリケーション。Web 画面からの記録に加え、LINE からのメッセージによる記録入力を予定している。
 
-現在は Stage 1（Web での認証・記録管理・ダッシュボード、および LINE 連携）を実装中。進捗と作業単位は `plan.md` で管理する。
+**アカウントの主体は LINE アカウント**であり、登録は Bot の友だち追加または初回 LINE Login で自動作成される（登録画面・メール＋パスワード認証は無い）。Web はその同じアカウントを PC 等でより詳しく閲覧・編集する画面。現在は Stage 1（LINE Login による Web 認証・記録管理・ダッシュボード、および LINE Bot）を実装中。進捗と作業単位は `plan.md` で管理する。
 
-**根拠となる詳細仕様書はリポジトリ外にある**（`~/plans/SPEC-workout-tracker-20260723.md`、版 2.0 確定。以下「仕様書」）。GitHub Actions 上のセッションからは参照できないため、仕様に関わる判断が必要な場合は推測せず、その旨を明示する。本ファイルに書かれた規約は、仕様書を参照できない環境でも守れるよう自己完結させる。
+**根拠となる詳細仕様書はリポジトリ外にある**（`~/plans/SPEC-workout-tracker-20260723.md`、版 3.1 確定。以下「仕様書」）。GitHub Actions 上のセッションからは参照できないため、仕様に関わる判断が必要な場合は推測せず、その旨を明示する。本ファイルに書かれた規約は、仕様書を参照できない環境でも守れるよう自己完結させる。
 
 ---
 
@@ -22,7 +22,7 @@
 |---|---|
 | 言語・フレームワーク | Ruby 3.3.10 / Rails 8.1 |
 | データベース | PostgreSQL 17（開発環境は `compose.yaml` の Docker コンテナ） |
-| 認証 | Devise |
+| 認証 | LINE Login（OpenID Connect・`omniauth_openid_connect`）＋ Devise（`omniauthable` / `rememberable` のセッション管理のみ。メール＋パスワード認証は不採用） |
 | フロントエンド | Propshaft / importmap-rails / Turbo / Stimulus（Hotwire 既定構成） |
 | グラフ描画 | Chart.js（importmap 経由。仕様書 2.1） |
 | 非同期ジョブ | **Stage 1 では未導入。** Stage 2 で Sidekiq ＋ Redis を ActiveJob アダプタとして導入する（仕様書 2.1 / 5章） |
@@ -72,7 +72,8 @@ Gemfile の `solid_queue` / `solid_cache` / `solid_cable` は `rails new` の既
 ### ユーザーデータの分離（最重要）
 
 - **リソースの取得は常に `current_user` を起点とする。** `Workout.find(params[:id])` のようにモデルから直接引かず、`current_user.workouts.find(params[:id])` の形で書く
-- 全画面で `authenticate_user!` を必須とする。除外してよいのは LINE Webhook エンドポイントのみ
+- 全画面で `authenticate_user!` を必須とする。除外してよいのは LINE Webhook エンドポイントのみ（Devise の画面・コールバックは `devise_controller?` で除外済み）
+- LINE Login のコールバックは state / nonce の照合と ID トークンの署名検証を OmniAuth に委ねる。`config/initializers/devise.rb` の `client_signing_alg` / `client_auth_method` / `pkce` は LINE 固有の必須設定であり、理由なく変えない（`docs/spike-line-login-oidc-20260904.md`）
 - CSRF 保護を除外してよいのは LINE Webhook エンドポイントのみ。他の箇所で `skip_forgery_protection` を使わない
 
 ### 秘密情報

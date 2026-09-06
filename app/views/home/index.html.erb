@@ -35,6 +35,6 @@
 </section>
 
 <footer>
-  <p><%= current_user.email %> でログイン中です。</p>
+  <p><%= current_user.name %> でログイン中です。</p>
   <%= button_to "ログアウト", destroy_user_session_path, method: :delete %>
 </footer>

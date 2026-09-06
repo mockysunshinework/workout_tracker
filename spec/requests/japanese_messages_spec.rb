@@ -39,12 +39,14 @@ RSpec.describe "Japanese messages", type: :request do
   end
 
   describe "Devise メッセージ" do
-    it "ログイン失敗のメッセージが日本語で表示される" do
-      post user_session_path,
-           params: { user: { email: user.email, password: "wrong-password" } }
+    it "LINE Login 失敗のメッセージが日本語で表示される" do
+      OmniAuth.config.mock_auth[:line] = :invalid_credentials
 
-      expect(flash[:alert]).to include("パスワード")
-      expect(flash[:alert]).not_to include("Invalid")
+      post user_line_omniauth_authorize_path
+      follow_redirect! while response.redirect? && response.location != new_user_session_url
+
+      expect(flash[:alert]).to include("認証に失敗")
+      expect(flash[:alert]).not_to include("Could not")
     end
   end
 end
