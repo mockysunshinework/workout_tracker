@@ -8,6 +8,13 @@ RSpec.describe "LINE Webhook", type: :request do
 
   before do
     allow(LineBot).to receive(:channel_secret).and_return(channel_secret) # LineBotモジュールのchannel_secretメソッドの返り値をlet(:channel_secret)で定義した値にする
+    # 8.9 以降、follow イベントは Get profile と Reply を呼ぶ。本 spec は受信・署名・冪等性・応答分類の
+    # 検証なので、LINE への実通信は行わず「プロフィール取得不可・返信成功」の固定応答に差し替える
+    allow(LineBot).to receive(:client).and_return(
+      instance_double(Line::Bot::V2::MessagingApi::ApiClient,
+                      get_profile_with_http_info: [ nil, 404, {} ],
+                      reply_message_with_http_info: [ nil, 200, {} ])
+    )
   end
 
   # test 環境は CSRF 保護が既定で無効のため、有効化した状態で全 example を実行する。
