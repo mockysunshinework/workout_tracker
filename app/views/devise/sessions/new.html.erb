@@ -1,0 +1,8 @@
+<h1>ログイン</h1>
+
+<p>LINE アカウントでログインします。メールアドレスやパスワードの登録は不要です。</p>
+<p>PC では、表示される LINE の画面で QR コードをスマートフォンの LINE で読み取るか、LINE アカウントのメールアドレスとパスワードでログインできます。</p>
+
+<%# OmniAuth 2 はリクエストフェーズが POST 必須。Turbo で送ると LINE への外部リダイレクトを
+    fetch で追ってしまい CORS で失敗するため、このフォームだけ Turbo を無効にする %>
+<%= button_to "LINE でログイン", user_line_omniauth_authorize_path, method: :post, data: { turbo: false } %>

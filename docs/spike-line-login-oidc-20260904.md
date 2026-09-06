@@ -145,7 +145,7 @@ raw_info keys: ["sub", "name", "picture", "iss", "aud", "exp", "iat", "nonce", "
 ## 7. 未検証・注意
 
 - **Bot 側 userId との一致は未検証**。Webhook で userId を受け取れる 8.9 以降、または 12.1 の実機確認で照合する。同一プロバイダーであることは 8.3 で確認済みで、公式ドキュメント上は一致するはず
-- `redirect_uri` は環境ごとに変わる。本実装では Devise がコールバック URL を組み立てるため固定値は不要だが、LINE Developers コンソールへの**登録は環境ごとに必要**（本番 URL はホスティング確定後）
+- `redirect_uri` は環境ごとに変わる。**omniauth_openid_connect は `client_options.redirect_uri` をそのまま使うだけで、OmniAuth 標準の `callback_url` からは組み立てない**（未指定だと LINE の認可 URL に `redirect_uri` が付かず、LINE 側が 400 Bad Request を返す。8.7 の実装時に発覚）。本実装では `setup` フックでリクエストごとに `full_host + callback_path` を与える。LINE Developers コンソールへの**登録は環境ごとに必要**（本番 URL はホスティング確定後）
 - Chrome が `/.well-known/appspecific/com.chrome.devtools.json` を取りに来て RoutingError がログに出るが、DevTools の探索であり無関係
 
 ## 8. 8.7（本実装）への持ち込み
@@ -161,6 +161,10 @@ config.omniauth :openid_connect,
                 pkce: true,
                 client_signing_alg: :HS256,
                 client_auth_method: :other,
+                setup: lambda { |env|   # redirect_uri は gem が組み立てないため毎リクエスト与える（7 章）
+                  strategy = env["omniauth.strategy"]
+                  strategy.options.client_options.redirect_uri = strategy.full_host + strategy.callback_path
+                },
                 client_options: {
                   identifier: Rails.application.credentials.dig(:line_login, :channel_id),
                   secret: Rails.application.credentials.dig(:line_login, :channel_secret)

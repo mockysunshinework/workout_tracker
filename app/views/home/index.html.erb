@@ -2,7 +2,8 @@
 
 <nav>
   <%= link_to "記録一覧", workouts_path %> |
-  <%= link_to "種目管理", exercises_path %>
+  <%= link_to "種目管理", exercises_path %> |
+  <%= button_to "ログアウト", destroy_user_session_path, method: :delete %>
 </nav>
 
 <section id="weekly-summary">
@@ -35,6 +36,6 @@
 </section>
 
 <footer>
-  <p><%= current_user.email %> でログイン中です。</p>
+  <p><%= current_user.name %> でログイン中です。</p>
   <%= button_to "ログアウト", destroy_user_session_path, method: :delete %>
 </footer>

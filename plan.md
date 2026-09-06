@@ -387,21 +387,39 @@
     - **未検証**: この uid が Bot 側（Messaging API の follow/message の userId）と一致するかは、Webhook で userId を受け取れる 8.9 以降・12.1 の実機確認で照合する（同一プロバイダーの確認は 8.3 で済み）
     - セキュリティチェック: `bundle check` OK、`bundler-audit check --update` で脆弱性なし。TDD: gem 導入と一時 spike のみ（アプリの振る舞いなし）のため RED/GREEN は省略
     - spike の手順・構成・結果・8.7 への持ち込み設定の詳細は `docs/spike-line-login-oidc-20260904.md`
-- [ ] 8.5 users テーブルの再定義（DB）
+- [x] 8.5 users テーブルの再定義（DB）
   - 実施内容: `email` `encrypted_password` `reset_password_token` `reset_password_sent_at` `line_link_code` `line_link_code_expires_at` を削除し、`line_user_id` を NOT NULL 化して部分 index を通常の unique index に張り替える（仕様書 4.5）。既存の開発 DB の行は email 前提で line_user_id が NULL のため、`db:reset` で作り直す（**開発データのみ・本番未稼働**。実行前にユーザーへ確認する）
   - 対象: `users` テーブル / テスト種別: `spec/db/users_line_columns_spec.rb` の書き換え
   - 完了条件: マイグレーション成功、line_user_id の NOT NULL と一意制約の spec が通る
   - 順序の注意: CLAUDE.md「既存カラムの削除は参照が残っていないことを確認してから」に従い、8.6〜8.8 で参照を先に外してから本項目を実行する順序にしてもよい。着手時に決める
   - **決定（2026-09-06・ユーザー承認）: 8.8 を先行し、8.5・8.6・8.7 は 1 ブランチ・1 PR で実装する**（plan.md 上は 3 項目とも残し、それぞれに記録する）。理由: 8.5 の列削除と NOT NULL 化は Devise の database_authenticatable / validatable・登録画面・factory を壊し、逆に 8.6/8.7 を先にすると email の NOT NULL default "" ＋ unique index が 2 人目の LINE ユーザー作成で衝突する。main は CI green 必須（Ruleset）のため途中で赤くなる分割はマージできない。8.8 は純粋な撤去で単独 green のため先行させる
   - **開発 DB の扱い（2026-09-06・ユーザー承認）**: 既存の開発ユーザー 1 件（email 前提・line_user_id NULL）があるため、マイグレーション適用時に `db:reset` で作り直す（本番未稼働。プリセット種目は seed で復元）
-- [ ] 8.6 User モデルの再定義（ドメイン）
+  - 実施結果（2026-09-06・8.6 / 8.7 と同一ブランチ `feat/f01-line-login-auth`）: `db/migrate/20260906090000_redefine_users_for_line_login.rb`。email / encrypted_password / reset_password_token / reset_password_sent_at / line_link_code / line_link_code_expires_at と各 index を削除し、line_user_id を NOT NULL 化して部分 index を通常の unique index に張り替え（`remove_column` は型・オプション付きで reversible）
+    - TDD: `spec/db/users_line_columns_spec.rb` を生 SQL（factory 非依存）で書き直し、RED（削除列が存在・NULL 挿入が通る・index に WHERE 句あり の 3 件失敗）→ migrate → GREEN（6 examples）
+    - 開発 DB: `db:drop` はエディタの ruby-lsp-rails が DB 接続を保持していて失敗（`PG::ObjectInUse`）。承認内容と同じ効果になる **`User.destroy_all`（1 件・配下の workouts 3 件が dependent destroy）→ `db:migrate`** で対応した。プリセット種目 22 件は無傷で seed 再実行は不要
+- [x] 8.6 User モデルの再定義（ドメイン）
   - 実施内容: `devise :omniauthable, :rememberable`（`omniauth_providers: [:line]`）に変更し、`line_user_id` をキーにした find_or_create（仕様書 4.1.1。表示名 nil 時はフォールバック名 `LINE ユーザー`、既存ユーザーの表示名更新は LINE Login 時のみ）をクラスメソッドとして実装する。連携コード関連（`issue_line_link_code!` `unlink_line!` `line_linked?` `line_link_code_active?` と定数）を削除し、factory を line_user_id 前提に書き換える
   - 対象: `app/models/user.rb` / テスト種別: model spec
   - 完了条件: model spec（新規作成・既存取得・フォールバック名・表示名更新の有無・line_user_id 必須と一意）が通り、削除したメソッドの spec が残っていない
-- [ ] 8.7 Web ログインの LINE Login 化（UI）
+  - 実施結果（2026-09-06）: `devise :omniauthable, :rememberable, omniauth_providers: [:line]`。`User.find_or_create_from_line!(line_user_id:, display_name:, update_name: false)` と `FALLBACK_NAME = "LINE ユーザー"`。factory は `line_user_id` の sequence ＋ name に変更（email / password 廃止）
+    - TDD: RED は「`email` undefined（Devise の旧モジュールが残存）」「`find_or_create_from_line!` undefined」→ GREEN（model spec 9 examples）
+    - **line_user_id の一意性はモデルでは検証しない**（DB unique index に任せる）。理由: 8.2a と同じく事前 exists? チェックの TOCTOU を避けるため。follow と LINE Login の初回接触が同時に走った場合の `RecordNotUnique` は `find_by!` で既存行を返して吸収する（model spec で find_by を nil に固定して再現）
+    - 表示名の更新は `update_name: true` のときだけ（LINE Login 用）。follow（8.9）は既定の false で呼ぶ（仕様書 4.1.1「follow 時は再取得しない」）。表示名が空なら更新もしない
+    - Devise 初期化子: email / password 系の設定（case_insensitive_keys・stretches・password_length・email_regexp・reset_password_within・reconfirmable・mailer_sender）を削除し、`config.omniauth :openid_connect, name: :line, ...`（8.4 の spike と同じ設定・理由をコメントに記載）を追加
+- [x] 8.7 Web ログインの LINE Login 化（UI）
   - 実施内容: `devise_for :users, skip: [:registrations, :passwords]` にコールバックコントローラを加え、コールバックで 8.6 の find_or_create → `sign_in_and_redirect`。ログイン画面を「LINE でログイン」ボタンのみに差し替える（仕様書 4.4 画面 1）。`app/views/devise/registrations`、`configure_permitted_parameters`、letter_opener 設定（2.4）、`spec/requests/password_reset_spec.rb` を撤去し、`spec/requests/authentication_spec.rb` を OmniAuth テストモードで書き直す。あわせてリポジトリの `CLAUDE.md`（技術スタックの認証行・プロジェクト概要）を更新する
   - テスト種別: request spec（未ログイン→ログイン画面 / コールバック成功→ダッシュボード / 失敗→ログイン画面にエラー / ログアウト）
   - 完了条件: 上記 spec が通り、ブラウザで LINE Login → ダッシュボード表示が成立する。Brakeman 警告 0
+  - 実施結果（2026-09-06）: `Users::OmniauthCallbacksController#line`（`find_or_create_from_line!(update_name: true)` → `sign_in_and_redirect`）。ログイン画面 `app/views/devise/sessions/new.html.erb` は「LINE でログイン」ボタン（POST・`data: { turbo: false }`）のみ。ダッシュボードにログアウトボタンを追加し、「〜でログイン中」の表示を email から name に変更
+    - **ルート**: `devise_for :users, controllers: { omniauth_callbacks: ... }` が生成するのは `/users/auth/line`（authorize / callback）のみ。database_authenticatable が無いと sessions ルートは生成されないため、`devise_scope` で `GET /users/sign_in`（`devise/sessions#new`）と `DELETE /users/sign_out`（`devise/sessions#destroy`）を明示的に張った（plan の `skip: [:registrations, :passwords]` は不要になった: モジュール自体が無い）
+    - 同じ理由で Devise 既定の `after_omniauth_failure_path_for` が呼ぶ `new_session_path` ヘルパが定義されず失敗するため、コールバックコントローラで `new_user_session_path` に override
+    - 撤去: `app/views/devise/registrations`、`configure_permitted_parameters`、letter_opener（gem・development.rb の設定）、`spec/requests/password_reset_spec.rb`、ja.yml の `email` 属性名
+    - TDD: `spec/requests/authentication_spec.rb` を書き直し（10 examples: ログイン画面のボタンと email/password 欄の不在・ログイン済みの sign_in アクセス・認証ガード 2・コールバック 4（新規作成 / 既存の表示名更新 / フォールバック名 / 失敗→ログイン画面）・認可リクエストの redirect_uri（下記）・ログアウト）＋ `spec/routing/devise_routes_spec.rb`（3: sign_up / password/new / POST sign_in が not routable）＋ `japanese_messages_spec` の Devise 例を LINE Login 失敗メッセージ（「認証に失敗」）に差し替え。RED は `new_user_session_path` 未定義・callback 未実装 → GREEN
+    - LINE は `OmniAuth.config.test_mode`（rails_helper で有効化・`mock_auth[:line]` を after で消去）で置き換え。CI は master key が無く credentials が nil だが、テストモードは LINE に到達しないため影響なし
+    - `CLAUDE.md` を更新: プロジェクト概要（アカウントの主体は LINE）、仕様書版数 3.1、技術スタックの認証行、セキュリティ節に LINE 固有設定の注意
+    - **ブラウザ確認で発覚した不具合（2026-09-06・ユーザーが発見・修正）**: 初回の実装は `client_options.redirect_uri` を渡しておらず、LINE の認可 URL に `redirect_uri` が付かないため LINE 側が 400 を返した。omniauth_openid_connect は OmniAuth 標準の `callback_url` からは組み立てず `client_options.redirect_uri` をそのまま使う（gem のソース `redirect_uri` メソッドで確認）。spike（8.4）は固定値を渡していたため見逃した。ユーザーが `setup` フック（`strategy.full_host + strategy.callback_path` を毎リクエスト代入）を devise.rb に追加して解決し、`docs/spike-line-login-oidc-20260904.md` 7・8 章にも反映。これを守るため request spec に「認可 URL の redirect_uri がホスト＋コールバックパスになる」example を追加（テストモード外で実物の request_phase を通し、discovery と client は差し替え）。フックを外すと `redirect_uri` が nil で落ちること（RED）を確認済み。注意: フックは中間層の共有 `client_options` を書き換えるが、単一ホスト運用では値が常に同じため実害なし
+    - ブラウザ確認（2026-09-06・ユーザー操作）: `/` → ログイン画面へリダイレクト → 「LINE でログイン」→ LINE で許可 → ダッシュボードに表示名で「ログイン中」→ 「ログアウト」→ ログイン画面、まで成立。開発 DB に line_user_id（U 始まり 33 文字）と LINE の表示名を持つ User が自動作成されたことを確認（フォールバック名ではない）
+    - 品質・セキュリティ: RSpec 全件 236 examples 0 failures、RuboCop 指摘なし、Brakeman 警告 0（認証変更のため実行）、`bundle check` OK・`bundler-audit` 脆弱性なし（letter_opener 削除のため実行）
 - [x] 8.8 連携コード関連の撤去
   - 実施内容: `/settings/line` のルート・コントローラ・ビュー・spec、ダッシュボードの導線（8.2b が main に取り込まれている場合のみ）を削除する。仕様書 4.4 画面 6 は版 3.0 で削除済み
   - 完了条件: `git grep line_link_code` が 0 件、全 spec green
