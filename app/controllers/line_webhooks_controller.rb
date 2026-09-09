@@ -23,13 +23,47 @@ class LineWebhooksController < ApplicationController
       return head :ok
     end
 
-    events.each do |event|
-      # 登録済み（再送・並行受信）のイベントはブロックが実行されずスキップされる（SPEC 4.2.4）
-      # 冪等性（同じ Webhook が複数回来ても業務処理は 1 回だけ）を担保している
-      ProcessedLineEvent.record_once(event.webhook_event_id) do
-        # 業務処理（記録保存・返信）は 8 章以降で実装する
-      end
-    end
+    events.each { |event| handle(event) }
     head :ok
+  end
+
+  private
+
+  # イベント種別ごとの業務処理。ドメイン層には SDK の型を渡さず、識別子・本文・返信先の素の値だけを渡す
+  # （SPEC 2.3 多チャネル展開の境界）。返信は record_once（DB トランザクション）の外＝コミット後に行う
+  def handle(event)
+    case event
+    when Line::Bot::V2::Webhook::FollowEvent
+      handle_follow(event)
+    when Line::Bot::V2::Webhook::UnfollowEvent
+      handle_unfollow(event)
+    else
+      # message / postback は 9 章以降で実装する。未対応のイベントは冪等 ID だけ記録して受領する
+      ProcessedLineEvent.record_once(event.webhook_event_id)
+    end
+  end
+
+  # SPEC 4.2.1 follow。表示名の取得（外部 API・SPEC 2.3 の例外）は新規ユーザーのときだけ行う
+  # （既存ユーザーの表示名は follow で再取得しない: SPEC 4.1.1）
+  def handle_follow(event)
+    line_user_id = event.source.user_id
+    display_name = User.exists?(line_user_id: line_user_id) ? nil : LineBot.fetch_display_name(line_user_id)
+
+    greeting = nil
+    # 登録済み（再送・並行受信）のイベントはブロックが実行されずスキップされる（SPEC 4.2.4）
+    ProcessedLineEvent.record_once(event.webhook_event_id) do
+      _user, greeting = User.follow_from_line!(line_user_id: line_user_id, display_name: display_name)
+    end
+    return unless greeting
+
+    text = greeting == :welcome_back ? LineMessages.welcome_back : LineMessages.welcome
+    LineBot.reply(event.reply_token, text)
+  end
+
+  # SPEC 4.2.1 unfollow。フラグのみ。返信先（replyToken）は無い
+  def handle_unfollow(event)
+    ProcessedLineEvent.record_once(event.webhook_event_id) do
+      User.unfollow_from_line!(line_user_id: event.source.user_id)
+    end
   end
 end
