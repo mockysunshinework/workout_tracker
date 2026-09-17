@@ -122,7 +122,7 @@ RSpec.describe Exercise, type: :model do
     it "前方一致・部分一致では解決されない（候補提案は別フロー）" do
       create(:exercise, :preset, name: "ベンチプレス")
       create(:exercise, :preset, name: "インクラインベンチプレス")
-      binding.break
+
       expect(described_class.find_exact_match(user: user, name: "ベンチ")).to be_nil
       expect(described_class.find_exact_match(user: user, name: "インクライン")).to be_nil
     end
