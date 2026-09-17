@@ -483,10 +483,14 @@
     - 9.1 で確定後に追加した単位別名（rep / reps / レップ、set / sets）の plan.md 記述（PR #65 に入らなかった 3 行）も本ブランチで取り込む
     - REFACTOR: 境界規則の定数化 `NUMBER_ADJACENT`、および補助メソッド（`parse_line` / `split_name_and_group` / `group_like?` / `parse_group`）の `private_class_method` 化（2026-09-17。`module_function` は後続の def を公開特異メソッドにするため、公開 API を `call` のみに絞る。spec は `call` 経由のみで挙動変更なし）。品質: RSpec 全件 295 examples 0 failures・RuboCop 指摘なし（コントローラ変更なしのため Brakeman は未実行）
     - レビュー指摘に対応（2026-09-17・PR #66 の @claude レビュー。ブロッキングなし・2 件とも軽微）: (1) 補助メソッドが `module_function` で公開 API になっている → 正当。既存の module_function モジュール（line_bot / exercise_progress 等）は補助メソッドを持たないため揃える先がなく、`private_class_method` で `call` のみ公開に絞った。RED: `respond_to?(:parse_line)` が true で失敗することを確認 → GREEN（parser spec 35 examples）。(2) plan.md の example 数が PR 本文と不一致（293 vs 294） → 正当。line_messages_spec の 3 件目（正式名称）を 2 件と数えていたのが原因。件数を実測値に修正
-- [ ] 9.3 種目照合（完全一致）の統合
+- [x] 9.3 種目照合（完全一致）の統合
   - 実施内容: パース結果の種目名を正規化し、ユーザー独自→プリセットの順で完全一致照合する（仕様書 4.3.1(2) 手順 1。候補提案は 10 章のステップで実装）
   - テスト種別: unit spec
   - 完了条件: 表記ゆれ（`ベンチぷれす` 等）が既存種目に解決される spec が通る
+  - 実施結果（2026-09-17・ブランチ `feat/f03-exercise-exact-match`）: `Exercise.find_exact_match(user:, name:)` を追加（`app/models/exercise.rb`）。名前を `ExerciseNameNormalizer` で正規化し、`owned_by(user)` → `preset` の順に `normalized_name` の完全一致で `find_by`。一致なし・空白のみの名前は nil
+    - 配置: 独立クラスではなく Exercise の class method。CLAUDE.md「迷ったらまず model」に従い、既存スコープ（`owned_by` / `preset`）と正規化の呼び出し（`assign_normalized_name`）が同じモデルに揃うため。入力は文字列（9.4 で `RecordMessageParser::Entry#exercise_name` を渡す）。10.4 の候補検索も同モデルに並べる想定
+    - 「ユーザー独自 → プリセット」は 2 クエリ（`||`）で表現。1 クエリ＋ `ORDER BY user_id NULLS LAST` でも書けるが、仕様の手順をそのまま読める方を優先した（LINE 1 メッセージあたり種目数回の索引検索で性能差は無視できる）
+    - TDD: `spec/models/exercise_spec.rb` に 7 examples 追加（表記ゆれ→プリセット、独自種目、同名時は独自優先、他ユーザーの種目に解決されない、前方一致・部分一致は不一致、内部空白は区別、空白のみは nil）→ RED（`undefined method find_exact_match`）→ GREEN（exercise_spec 22 examples）。関連（normalizer / parser / seeds）58 examples・RuboCop 指摘なし。REFACTOR: 判定なし
 - [ ] 9.4 記録保存フローと成功応答の実装
   - 実施内容: 「冪等 ID 登録 → workout の find_or_create（競合はリトライ/4.2.4 準拠）→ セット採番・保存」を単一トランザクションで実装し、コミット後に保存内容のエコーバック（種目・重量・回数・セット数・当日合計）を Reply する（仕様書 2.3 / 4.2.3）
   - テスト種別: request spec（LINE API はモック）
