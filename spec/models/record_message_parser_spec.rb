@@ -216,4 +216,15 @@ RSpec.describe RecordMessageParser, type: :model do
       expect(entry_of("ベンチ260/5")).to eq [ "ベンチ", [ [ 260, 5, 1 ] ] ]
     end
   end
+
+  # 公開 API は call のみ。module_function は後続の def をすべて公開特異メソッドにするため、
+  # 補助メソッドが外から呼べないことを明示しておく（PR #66 レビュー指摘）
+  describe "公開 API" do
+    it "補助メソッド（parse_line / split_name_and_group / group_like? / parse_group）は外から呼べない" do
+      %i[parse_line split_name_and_group group_like? parse_group].each do |name|
+        expect(described_class).not_to respond_to(name), "#{name} is public"
+      end
+      expect(described_class).to respond_to(:call)
+    end
+  end
 end

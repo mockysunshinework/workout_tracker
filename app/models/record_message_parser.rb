@@ -226,4 +226,6 @@ module RecordMessageParser
 
     [ Group.new(weight_kg: weight, reps: reps, sets: sets), nil ]
   end
+
+  private_class_method :parse_line, :split_name_and_group, :group_like?, :parse_group
 end
