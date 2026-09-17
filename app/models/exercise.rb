@@ -14,6 +14,17 @@ class Exercise < ApplicationRecord
 
   before_validation :assign_normalized_name
 
+  # LINE 入力の種目照合 手順 1（SPEC 4.3.1(2)）: 正規化した名前の完全一致で、ユーザー独自種目 →
+  # 共通プリセットの順に探す。一致しなければ nil（候補提案は 10 章の別フロー。ここでは推測しない）。
+  # 入力名の正規化は保存時（assign_normalized_name）と同じ ExerciseNameNormalizer を使うので、
+  # `ベンチぷれす` や末尾全角空白の表記ゆれは同じ normalized_name に畳まれて一致する
+  def self.find_exact_match(user:, name:)
+    normalized_name = ExerciseNameNormalizer.call(name)
+    return nil if normalized_name.blank?
+
+    owned_by(user).find_by(normalized_name: normalized_name) || preset.find_by(normalized_name: normalized_name)
+  end
+
   private
 
   # 表示名は入力された表記のまま保持し、照合用の名前だけを正規化する（SPEC 4.5）

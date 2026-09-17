@@ -88,6 +88,56 @@ RSpec.describe Exercise, type: :model do
     end
   end
 
+  # 9.3 LINE 入力の種目照合 手順 1（SPEC 4.3.1(2)）: 正規化した名前の完全一致。
+  # 一致しない場合の候補提案は 10 章
+  describe ".find_exact_match（正規化名の完全一致・ユーザー独自 → プリセットの順）" do
+    let(:user) { create(:user) }
+
+    it "表記ゆれ（ひらがな・末尾全角空白）はプリセットに解決される" do
+      preset = create(:exercise, :preset, name: "ベンチプレス")
+
+      expect(described_class.find_exact_match(user: user, name: "ベンチぷれす")).to eq(preset)
+      expect(described_class.find_exact_match(user: user, name: "ベンチプレス　")).to eq(preset)
+    end
+
+    it "ユーザー独自種目に解決される" do
+      mine = create(:exercise, user: user, name: "マイ種目")
+
+      expect(described_class.find_exact_match(user: user, name: "まい種目")).to eq(mine)
+    end
+
+    it "プリセットと同名の独自種目がある場合は独自種目を優先する" do
+      create(:exercise, :preset, name: "ベンチプレス")
+      mine = create(:exercise, user: user, name: "ベンチプレス")
+
+      expect(described_class.find_exact_match(user: user, name: "ベンチプレス")).to eq(mine)
+    end
+
+    it "他ユーザーの独自種目には解決されない" do
+      create(:exercise, user: create(:user), name: "他人の種目")
+
+      expect(described_class.find_exact_match(user: user, name: "他人の種目")).to be_nil
+    end
+
+    it "前方一致・部分一致では解決されない（候補提案は別フロー）" do
+      create(:exercise, :preset, name: "ベンチプレス")
+      create(:exercise, :preset, name: "インクラインベンチプレス")
+      binding.break
+      expect(described_class.find_exact_match(user: user, name: "ベンチ")).to be_nil
+      expect(described_class.find_exact_match(user: user, name: "インクライン")).to be_nil
+    end
+
+    it "内部の空白は区別する（`ベンチ プレス` は `ベンチプレス` と別種目）" do
+      create(:exercise, :preset, name: "ベンチプレス")
+
+      expect(described_class.find_exact_match(user: user, name: "ベンチ プレス")).to be_nil
+    end
+
+    it "空白のみの名前は nil を返す" do
+      expect(described_class.find_exact_match(user: user, name: "　 ")).to be_nil
+    end
+  end
+
   describe "削除制限（使用中の記録がある種目は削除不可・SPEC 4.3）" do
     it "workout_sets で使用中の種目は destroy できず、レコードが残る" do
       exercise = create(:exercise)
