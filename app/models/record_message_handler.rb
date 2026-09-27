@@ -37,18 +37,24 @@ module RecordMessageHandler
   end
 
   # 当日 workout の取得/作成とセットの追記を savepoint（requires_new）で囲む。無効な値で失敗したときに
-  # 作りかけの workout やセットだけを巻き戻し、外側のトランザクション（冪等 ID の登録）は中断させない
+  # 作りかけの workout やセットだけを巻き戻し、外側のトランザクション（冪等 ID の登録）は中断させない。
+  # 同じ種目が複数行に分かれていても種目ごとにまとめる（初出の順・グループは行の順）: DB の結果は 1 行に
+  # 並べた場合と同じなので、エコーバックも同じ形にする（PR #69 レビュー指摘）
   def save(user, performed_on, resolved)
+    groups_by_exercise = resolved.each_with_object({}) do |(exercise, entry), acc|
+      (acc[exercise] ||= []).concat(entry.groups)
+    end
+
     Workout.transaction(requires_new: true) do
       workout = Workout.find_or_create_for_day!(user: user, performed_on: performed_on)
-      resolved.each do |exercise, entry|
-        sets = entry.groups.flat_map { |g| Array.new(g.sets) { { weight_kg: g.weight_kg, reps: g.reps } } }
+      groups_by_exercise.each do |exercise, groups|
+        sets = groups.flat_map { |g| Array.new(g.sets) { { weight_kg: g.weight_kg, reps: g.reps } } }
         workout.append_sets!(exercise: exercise, sets: sets)
       end
 
       counts = workout.workout_sets.group(:exercise_id).count
-      entries = resolved.map do |exercise, entry|
-        SavedEntry.new(exercise_name: exercise.name, groups: entry.groups, daily_set_count: counts.fetch(exercise.id))
+      entries = groups_by_exercise.map do |exercise, groups|
+        SavedEntry.new(exercise_name: exercise.name, groups: groups, daily_set_count: counts.fetch(exercise.id))
       end
       Saved.new(performed_on: performed_on, entries: entries, total_set_count: counts.values.sum)
     end

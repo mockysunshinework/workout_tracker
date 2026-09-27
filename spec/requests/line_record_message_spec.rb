@@ -83,6 +83,16 @@ RSpec.describe "LINE Webhook: 記録メッセージ", type: :request do
     expect(text).to include("本日合計 6セット")
   end
 
+  it "同じ種目を複数行に分けて送っても、1 行に並べた場合と同じエコーバックになる" do
+    post_event(text_event("ベンチプレス60/5\n懸垂/10/2\nベンチプレス70/3"))
+
+    expect(sets_of(bench)).to eq [ [ 1, 60, 5 ], [ 2, 70, 3 ] ]
+    text = replied_texts.join
+    expect(text).to include("ベンチプレス 60kg×5回×1セット / 70kg×3回×1セット（本日 計2セット）")
+    expect(text.scan("ベンチプレス").size).to eq 1
+    expect(text).to include("本日合計 4セット")
+  end
+
   it "同日の追記は既存 workout にセット番号を続けて保存する（都度送信）" do
     workout = create(:workout, user: user, performed_on: today)
     (1..3).each { |n| create(:workout_set, workout: workout, exercise: bench, set_number: n, weight_kg: 60, reps: 5) }

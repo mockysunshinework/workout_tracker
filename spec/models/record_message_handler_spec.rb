@@ -46,6 +46,19 @@ RSpec.describe RecordMessageHandler, type: :model do
       expect(user.workouts.count).to eq 1
     end
 
+    # PR #69 レビュー指摘: 同じ種目を複数行に分けて書いても DB の結果は 1 行に並べた場合と同じなので、
+    # エコーバックも種目単位にまとめる（行単位だと種目名が重複し、当日セット数が各行に付いて読みにくい）
+    it "同じ種目を複数行に分けて書いた場合は、保存内容を種目ごとに初出の位置へまとめる" do
+      outcome = handle("ベンチプレス60/5\n懸垂/10/2\nベンチプレス70/3")
+
+      expect(outcome.status).to eq :saved
+      expect(sets_of(bench)).to eq [ [ 1, 60, 5 ], [ 2, 70, 3 ] ]
+      expect(outcome.saved.entries.map(&:exercise_name)).to eq [ "ベンチプレス", "懸垂" ]
+      expect(outcome.saved.entries.first.groups.map { |g| [ g.weight_kg, g.reps, g.sets ] }).to eq [ [ 60, 5, 1 ], [ 70, 3, 1 ] ]
+      expect(outcome.saved.entries.map(&:daily_set_count)).to eq [ 2, 2 ]
+      expect(outcome.saved.total_set_count).to eq 4
+    end
+
     it "表記ゆれの種目名は照合で解決され、保存内容には種目の正式な表示名が入る" do
       outcome = handle("べんちぷれす60/5")
 
