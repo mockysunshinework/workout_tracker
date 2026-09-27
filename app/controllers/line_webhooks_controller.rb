@@ -37,10 +37,36 @@ class LineWebhooksController < ApplicationController
       handle_follow(event)
     when Line::Bot::V2::Webhook::UnfollowEvent
       handle_unfollow(event)
+    when Line::Bot::V2::Webhook::MessageEvent
+      handle_message(event)
     else
-      # message / postback は 9 章以降で実装する。未対応のイベントは冪等 ID だけ記録して受領する
+      # postback は 10 章で実装する。未対応のイベントは冪等 ID だけ記録して受領する
       ProcessedLineEvent.record_once(event.webhook_event_id)
     end
+  end
+
+  # SPEC 4.2.1 message（テキスト）: 記録フォーマットなら保存してエコーバック（9.4）。
+  # 記録日は受信日（JST。Date.current はアプリのタイムゾーン = Tokyo）。
+  # 未実装の分岐は冪等 ID だけ記録して受領する: テキスト以外のメッセージ / User 未作成の送信者（9.5 の
+  # 自己修復）/ パース失敗・その他テキスト（9.5 の案内返信）/ 未知の種目（10 章の候補提案）
+  def handle_message(event)
+    # テキストメッセージでない場合には、このイベントは処理済みと記録して終了
+    return ProcessedLineEvent.record_once(event.webhook_event_id) unless event.message.is_a?(Line::Bot::V2::Webhook::TextMessageContent)
+
+    user = User.find_by(line_user_id: event.source.user_id)
+    # アプリ側にUserが存在しないLINEユーザーなら筋トレ記録処理はせずにイベントを処理済とする
+    return ProcessedLineEvent.record_once(event.webhook_event_id) unless user
+
+    outcome = nil
+    # このWebhookイベントをまだ処理していなければ、ブロックの中を実行する
+    # 処理済みの場合はこのブロックは実行されない
+    ProcessedLineEvent.record_once(event.webhook_event_id) do
+      outcome = RecordMessageHandler.call(user: user, text: event.message.text, performed_on: Date.current)
+    end
+    # outcome が存在して、なおかつ保存成功なら先へ進む
+    return unless outcome&.status == :saved
+
+    LineBot.reply(event.reply_token, LineMessages.recorded(outcome.saved))
   end
 
   # SPEC 4.2.1 follow。表示名の取得（外部 API・SPEC 2.3 の例外）は新規ユーザーのときだけ行う
