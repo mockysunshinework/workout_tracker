@@ -123,6 +123,74 @@ RSpec.describe Workout, type: :model do
     end
   end
 
+  # 9.4 LINE 入力の保存フロー用（SPEC 4.2.2 / 4.5）
+  describe ".find_or_create_for_day!（当日 workout の取得または作成）" do
+    let(:user) { create(:user) }
+    let(:day) { Date.new(2026, 9, 18) }
+
+    it "同一ユーザー同一日の workout があればそれを返す" do
+      existing = create(:workout, user: user, performed_on: day)
+
+      expect { described_class.find_or_create_for_day!(user: user, performed_on: day) }.not_to change(described_class, :count)
+      expect(described_class.find_or_create_for_day!(user: user, performed_on: day)).to eq existing
+    end
+
+    it "なければ作成して返す" do
+      workout = nil
+      expect { workout = described_class.find_or_create_for_day!(user: user, performed_on: day) }
+        .to change(described_class, :count).by(1)
+      expect(workout).to have_attributes(user: user, performed_on: day)
+    end
+
+    it "他ユーザーの同日 workout は返さない" do
+      other_user = create(:user)
+      create(:workout, user: other_user, performed_on: day)
+
+      workout = described_class.find_or_create_for_day!(user: user, performed_on: day)
+      expect(workout.user).to eq user
+    end
+
+    it "検索と作成の間に別処理が同日 workout を作っていても（一意制約違反）、その行を返す" do
+      # find_by が nil を返した直後に別接続が INSERT した状況を、検索だけ空振りさせて再現する
+      workouts = user.workouts
+      allow(user).to receive(:workouts).and_return(workouts)
+      allow(workouts).to receive(:find_by).with(performed_on: day).and_return(nil)
+      existing = create(:workout, user: user, performed_on: day)
+
+      expect(described_class.find_or_create_for_day!(user: user, performed_on: day)).to eq existing
+    end
+  end
+
+  describe "#append_sets!（同一種目の複数セット一括追記・SPEC 4.2.2）" do
+    let(:user) { create(:user) }
+    let(:workout) { create(:workout, user: user) }
+    let(:exercise) { create(:exercise, user: user) }
+
+    it "左から順に採番して追記し、保存したセットを返す" do
+      sets = workout.append_sets!(exercise: exercise, sets: [ { weight_kg: 60, reps: 5 }, { weight_kg: 65, reps: 3 } ])
+
+      expect(sets.map { |s| [ s.set_number, s.weight_kg, s.reps ] }).to eq [ [ 1, 60, 5 ], [ 2, 65, 3 ] ]
+      expect(sets).to all(be_persisted)
+    end
+
+    it "既存 1,2,3 の後は 4,5 になる（同日追記の採番継続）" do
+      (1..3).each { |n| create(:workout_set, workout: workout, exercise: exercise, set_number: n) }
+
+      sets = workout.append_sets!(exercise: exercise, sets: [ { weight_kg: 60, reps: 5 }, { weight_kg: 60, reps: 5 } ])
+
+      expect(sets.map(&:set_number)).to eq [ 4, 5 ]
+    end
+
+    it "1 件でも無効なら RecordInvalid を投げ、同じ呼び出しのセットは 1 件も残らない" do
+      # 自重でない種目に重量なし（weight_kg 必須）を 2 件目に混ぜる
+      expect {
+        workout.append_sets!(exercise: exercise, sets: [ { weight_kg: 60, reps: 5 }, { weight_kg: nil, reps: 5 } ])
+      }.to raise_error(ActiveRecord::RecordInvalid)
+
+      expect(workout.workout_sets.count).to eq 0
+    end
+  end
+
   describe "#remove_set（削除時の繰り上げ・SPEC 4.5）" do
     let(:user) { create(:user) }
     let(:workout) { create(:workout, user: user) }
