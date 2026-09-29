@@ -491,10 +491,27 @@
     - 配置: 独立クラスではなく Exercise の class method。CLAUDE.md「迷ったらまず model」に従い、既存スコープ（`owned_by` / `preset`）と正規化の呼び出し（`assign_normalized_name`）が同じモデルに揃うため。入力は文字列（9.4 で `RecordMessageParser::Entry#exercise_name` を渡す）。10.4 の候補検索も同モデルに並べる想定
     - 「ユーザー独自 → プリセット」は 2 クエリ（`||`）で表現。1 クエリ＋ `ORDER BY user_id NULLS LAST` でも書けるが、仕様の手順をそのまま読める方を優先した（LINE 1 メッセージあたり種目数回の索引検索で性能差は無視できる）
     - TDD: `spec/models/exercise_spec.rb` に 7 examples 追加（表記ゆれ→プリセット、独自種目、同名時は独自優先、他ユーザーの種目に解決されない、前方一致・部分一致は不一致、内部空白は区別、空白のみは nil）→ RED（`undefined method find_exact_match`）→ GREEN（exercise_spec 22 examples）。関連（normalizer / parser / seeds）58 examples・RuboCop 指摘なし。REFACTOR: 判定なし
-- [ ] 9.4 記録保存フローと成功応答の実装
+- [x] 9.4 記録保存フローと成功応答の実装
   - 実施内容: 「冪等 ID 登録 → workout の find_or_create（競合はリトライ/4.2.4 準拠）→ セット採番・保存」を単一トランザクションで実装し、コミット後に保存内容のエコーバック（種目・重量・回数・セット数・当日合計）を Reply する（仕様書 2.3 / 4.2.3）
   - テスト種別: request spec（LINE API はモック）
   - 完了条件: 記録メッセージ→保存→エコーバックの spec が通る（複数行・自重・同日追記の採番継続を含む）
+  - 作業分解（tdd-dev 実行管理用）:
+    - [x] Workout: 当日 workout の find_or_create（競合安全）と同一種目の複数セット一括追記
+    - [x] RecordMessageHandler: パース → 種目照合 → 保存（単一トランザクション・全行不保存）
+    - [x] LineMessages.recorded: エコーバック文
+    - [x] Webhook: message（テキスト）イベントの統合（request spec）
+  - 実施結果（2026-09-18・ブランチ `feat/f03-record-save-flow`）:
+    - `Workout.find_or_create_for_day!(user:, performed_on:)`: `find_by || create_or_find_by!`。並行入力の衝突は**リトライ側**で扱う（4.2.4 の 500 → 再送ではなく検索し直す）。衝突は 2 経路: 相手がコミット済みなら一意性のモデル検証が先に `RecordInvalid`（rescue して `find_by!`）、未コミットなら INSERT が `RecordNotUnique`（`create_or_find_by!` の savepoint で中断せず検索に切替）。spec は前者を「検索だけ空振りさせる」stub で再現。後者は Rails の `create_or_find_by!` の挙動に依存（本 spec では未再現）
+    - `Workout#append_sets!(exercise:, sets:)`: 同一種目の複数セットを左から順に採番して一括追記。採番と行ロックは `append_set` と共通化（`next_set_number` を private に抽出）。1 件でも無効なら `RecordInvalid` で同呼び出し分がトランザクションごと巻き戻る
+    - `RecordMessageHandler.call(user:, text:, performed_on:)` → `Outcome(status:, saved:, parse_result:, unknown_names:, invalid_messages:)`。status は `:saved` / `:parse_failed`（返信は 9.5）/ `:unknown_exercises`（既知の行も保存しない。候補提案は 10 章）/ `:invalid`（モデル検証エラー。例: 重量が必要な種目に `ベンチプレス/10/3`。**9.5 の返信対象に追加すること**）。保存は `Workout.transaction(requires_new: true)` の savepoint で囲み、無効入力で作りかけの workout・セットだけ巻き戻して外側の `record_once`（冪等 ID の登録）は中断させない（spec で確認）。グループは `sets` 数に展開して `append_sets!` に渡す（`ベンチ60/5/2 65/5` → 60×5, 60×5, 65×5）
+    - **配置の判断（CLAUDE.md「検討中」の論点）**: パース・照合・保存を跨ぐ処理だが Service Object は導入せず、`app/models` の module（`RecordMessageParser` / `LineBot` と同パターン）に置いた。理由: 仕様書 2.3 の「コマンド処理をドメイン層に置き、SDK の型を渡さない」に沿い、かつ既存の配置規則を増やさない。`app/services` を切る判断は 10 章（保留・postback）で処理が増えた時点で再検討
+    - `LineMessages.recorded(saved)`: 「`9/18 の記録を保存しました` / 種目ごとに `ベンチプレス 60kg×5回×2セット / 65kg×5回×1セット（本日 計3セット）` / `本日合計 6セット`」。グループは個別列挙（9.1・2026-09-16 の申し送りどおり）。自重は `自重`、重量は `.0` を落とす（`60kg` / `62.5kg`）。**「当日合計」の解釈は決め値**: 種目ごとの当日セット数（都度送信で `本日 計4セット` と増えていく）＋全種目の当日合計セット数の 2 段
+    - コントローラ `handle_message`: テキスト以外（スタンプ等）と User 未作成の送信者は冪等 ID だけ記録して受領（後者は 9.5 で `find_or_create` に置換）。`record_once` のブロック内で handler を呼び、`:saved` のときだけコミット後に Reply。それ以外の返信は 9.5 / 10 章
+    - **`config.time_zone = "Tokyo"` を設定**（従来は既定の UTC）: 仕様書 4.2.2「記録日は受信日（JST）」のため。request spec は UTC 9/17 23:30（JST 9/18 08:30）に固定して 9/18 に保存されることを検証。Web の `Date.current`（ダッシュボードの週範囲）も JST に揃う。全体テストに影響なし（326 examples green）
+      - **決定（2026-09-24・ユーザー承認）: 当面は Tokyo 固定で進める**。日本以外への展開の可能性はあるが、切り替えの契機は「LINE 以外のチャット API 対応」ではなく「記録日の基準タイムゾーンが JST 固定でなくなった時」（海外ユーザー・海外ワークスペースを扱う時）。その際は `config.time_zone` の変更では足りず、`users.time_zone`（またはワークスペース単位）を持ち、Webhook 受信時の記録日と Web の「今日・今週」を対象ユーザーの timezone で決める。`created_at` 等の datetime は UTC 保存のまま。仕様書 10 章 #18 として未確定事項に登録（版 3.2 内）
+    - TDD: Workout 7 examples → RED（NoMethodError）→ GREEN。競合 spec が `RecordInvalid` で失敗し、上記の「相手コミット済み」経路の rescue を追加して GREEN。handler 8 examples・`LineMessages.recorded` 2 examples → RED（`uninitialized constant`）→ GREEN。request spec `spec/requests/line_record_message_spec.rb` 7 examples → RED 5 件（message イベント未処理で保存 0 件）・2 件は現状挙動の回帰ガード（未知種目・スタンプで保存しない）→ GREEN。REFACTOR: `handle_message` のガード分岐を明示化（`&&` で真偽値とレコードを混ぜていた）
+    - 品質・セキュリティ: RSpec 全件 326 examples 0 failures・RuboCop 指摘なし・Brakeman 警告 0（Webhook 処理の変更のため実行）
+  - レビュー指摘に対応（2026-09-27・PR #69 の @claude レビュー。approve 表明・ブロッカーなし）: 「同じ種目を複数行に分けて送るとエコーバックの種目名が重複し、各行に当日セット数が付く」→ **正当・修正**。実際に `ベンチプレス60/5` / `懸垂/10/2` / `ベンチプレス70/3` の 3 行で再現: 保存と採番は正しい（ベンチ 1: 60×5、2: 70×3）が、エコーバックは `ベンチプレス 60kg×5回×1セット（本日 計2セット）` と `ベンチプレス 70kg×3回×1セット（本日 計2セット）` に分かれ、同じ結果になる 1 行入力 `ベンチプレス60/5 70/3` と表示が食い違っていた。2 行分けは想定する入力（ユーザー確認）のため、拒否ではなく **handler の保存処理で種目ごとにまとめる**（初出の順・グループは行の順で個別列挙のまま）方式を採用。`append_sets!` も種目ごと 1 回になる。RED: handler spec で entries が `["ベンチプレス", "懸垂", "ベンチプレス"]`、request spec で分かれた表示を確認 → GREEN。もう 1 点の「CI 環境で RSpec を実行できなかった」は情報提供で対応不要（ローカルと CI の test ジョブで実行済み）
 - [ ] 9.5 エラー応答の実装
   - 実施内容: パース失敗（失敗行とフォーマット例を返信、全行不保存）、User 未作成の送信者（仕様書 4.1.1 の自己修復: find_or_create してから通常処理。版 3.0 で「未連携ユーザーへの連携手順案内」から変更）、その他テキスト（ヘルプ案内）を実装する（仕様書 4.2.1 / 4.2.3）
   - テスト種別: request spec

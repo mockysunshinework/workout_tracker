@@ -16,14 +16,38 @@ class Workout < ApplicationRecord
   }
   scope :performed_in, ->(month) { where(performed_on: month.all_month) }
 
+  # LINE 入力は当日の workout に追記する（SPEC 4.2.2: 1 ユーザー 1 日 1 レコード）。
+  # 検索と作成の間に別処理（同一ユーザーの並行入力）が同日の行を作った場合は検索し直してその行を返す
+  # （SPEC 4.5「リトライまたは一時的な障害として扱う」のうちリトライ側）。衝突は 2 経路で現れる:
+  #   - 相手がコミット済み: 一意性のモデル検証がその行を見て RecordInvalid（DB 制約より先に検証が走る）
+  #   - 相手が未コミット: 検証は通り INSERT が相手のコミットを待って RecordNotUnique。create_or_find_by! が
+  #     savepoint 内で INSERT するため、トランザクションは中断せず検索に切り替わる
+  def self.find_or_create_for_day!(user:, performed_on:)
+    user.workouts.find_by(performed_on: performed_on) || user.workouts.create_or_find_by!(performed_on: performed_on)
+  # rescueは並行処理による競合対策
+  rescue ActiveRecord::RecordInvalid
+    user.workouts.find_by!(performed_on: performed_on)
+  end
+
   # 同一 workout×種目の最大 set_number の次を振って追記する（SPEC 4.5。例: 1,2,3 の後は 4,5）。
   # 並行入力（LINE と Web 等）とは workout 行の SELECT FOR UPDATE で直列化する
   # （2026-08-14 決定。制約違反リトライ方式は中断トランザクションの回復が複雑なため不採用）。
   def append_set(exercise:, **attributes)
     with_lock do
-      next_number = workout_sets.where(exercise: exercise).maximum(:set_number).to_i + 1
       # 自動採番を後置し、attributes に set_number が紛れても上書きされないようにする
-      workout_sets.create(**attributes, exercise: exercise, set_number: next_number)
+      workout_sets.create(**attributes, exercise: exercise, set_number: next_set_number(exercise))
+    end
+  end
+
+  # 同一種目の複数セットを左から順に採番して一括追記する（LINE の一括保存・SPEC 4.2.2）。
+  # 採番規則と行ロックは append_set と同じ。1 件でも無効なら RecordInvalid を投げ、
+  # 同じ呼び出しで作ったセットはトランザクションごと巻き戻る（部分保存しない・SPEC 4.2.3）
+  def append_sets!(exercise:, sets:)
+    with_lock do
+      number = next_set_number(exercise)
+      sets.map do |attributes|
+        workout_sets.create!(**attributes, exercise: exercise, set_number: number).tap { number += 1 }
+      end
     end
   end
 
@@ -43,5 +67,12 @@ class Workout < ApplicationRecord
       followers.each { |set| set.update!(set_number: set.set_number - 1) }
       workout_set
     end
+  end
+
+  private
+
+  # 呼び出し側で with_lock を取っていること（採番の直列化）
+  def next_set_number(exercise)
+    workout_sets.where(exercise: exercise).maximum(:set_number).to_i + 1
   end
 end

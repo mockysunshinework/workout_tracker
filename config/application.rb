@@ -33,7 +33,11 @@ module WorkoutTracker
     # These settings can be overridden in specific environments using the files
     # in config/environments, which are processed later.
     #
-    # config.time_zone = "Central Time (US & Canada)"
+    # 記録日は受信日（JST）で決める（SPEC 4.2.2）。Web の「今日」もこれに揃える。
+    # 当面は日本国内向けのため JST 固定（2026-09-24 決定・SPEC 10 章 #18）。日本以外へ展開して
+    # 「今日」の基準がユーザーごとに変わる時は、この設定ではなく users.time_zone 等へ移行する
+    # （DB の datetime は UTC 保存のまま）
+    config.time_zone = "Tokyo"
     # config.eager_load_paths << Rails.root.join("extras")
 
     # Don't generate system test files.

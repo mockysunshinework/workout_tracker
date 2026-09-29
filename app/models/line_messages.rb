@@ -19,6 +19,27 @@ module LineMessages
   end
 
   # 新規の友だち追加（SPEC 4.2.1 follow・新規）
+  # 保存内容のエコーバック（SPEC 4.2.3）。グループごとに「重量×回数×セット数」を個別に列挙し、
+  # 合算や省略で打ち間違い（例: `懸垂/10 /3` のスペース）が見えなくならないようにする（9.1・2026-09-16 決定）
+  def recorded(saved)
+    lines = saved.entries.map do |entry|
+      groups = entry.groups.map { |g| "#{format_weight(g.weight_kg)}×#{g.reps}回×#{g.sets}セット" }.join(" / ")
+      "#{entry.exercise_name} #{groups}（本日 計#{entry.daily_set_count}セット）"
+    end
+    <<~TEXT.chomp
+      #{saved.performed_on.strftime('%-m/%-d')} の記録を保存しました
+      #{lines.join("\n")}
+      本日合計 #{saved.total_set_count}セット
+    TEXT
+  end
+
+  # 自重（nil）は「自重」、それ以外は末尾の .0 を落として kg を付ける（60 → 60kg、62.5 → 62.5kg）
+  def format_weight(weight_kg)
+    return "自重" if weight_kg.nil?
+
+    "#{weight_kg.to_s('F').delete_suffix('.0')}kg"
+  end
+
   def welcome
     "友だち追加ありがとうございます！\nトレーニングの記録をこのトークに送るだけで保存できます。\n\n#{input_guide}"
   end
