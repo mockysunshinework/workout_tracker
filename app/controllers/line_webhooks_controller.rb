@@ -23,13 +23,73 @@ class LineWebhooksController < ApplicationController
       return head :ok
     end
 
-    events.each do |event|
-      # 登録済み（再送・並行受信）のイベントはブロックが実行されずスキップされる（SPEC 4.2.4）
-      # 冪等性（同じ Webhook が複数回来ても業務処理は 1 回だけ）を担保している
-      ProcessedLineEvent.record_once(event.webhook_event_id) do
-        # 業務処理（記録保存・返信）は 8 章以降で実装する
-      end
-    end
+    events.each { |event| handle(event) }
     head :ok
+  end
+
+  private
+
+  # イベント種別ごとの業務処理。ドメイン層には SDK の型を渡さず、識別子・本文・返信先の素の値だけを渡す
+  # （SPEC 2.3 多チャネル展開の境界）。返信は record_once（DB トランザクション）の外＝コミット後に行う
+  def handle(event)
+    case event
+    when Line::Bot::V2::Webhook::FollowEvent
+      handle_follow(event)
+    when Line::Bot::V2::Webhook::UnfollowEvent
+      handle_unfollow(event)
+    when Line::Bot::V2::Webhook::MessageEvent
+      handle_message(event)
+    else
+      # postback は 10 章で実装する。未対応のイベントは冪等 ID だけ記録して受領する
+      ProcessedLineEvent.record_once(event.webhook_event_id)
+    end
+  end
+
+  # SPEC 4.2.1 message（テキスト）: 記録フォーマットなら保存してエコーバック（9.4）。
+  # 記録日は受信日（JST。Date.current はアプリのタイムゾーン = Tokyo）。
+  # 未実装の分岐は冪等 ID だけ記録して受領する: テキスト以外のメッセージ / User 未作成の送信者（9.5 の
+  # 自己修復）/ パース失敗・その他テキスト（9.5 の案内返信）/ 未知の種目（10 章の候補提案）
+  def handle_message(event)
+    # テキストメッセージでない場合には、このイベントは処理済みと記録して終了
+    return ProcessedLineEvent.record_once(event.webhook_event_id) unless event.message.is_a?(Line::Bot::V2::Webhook::TextMessageContent)
+
+    user = User.find_by(line_user_id: event.source.user_id)
+    # アプリ側にUserが存在しないLINEユーザーなら筋トレ記録処理はせずにイベントを処理済とする
+    return ProcessedLineEvent.record_once(event.webhook_event_id) unless user
+
+    outcome = nil
+    # このWebhookイベントをまだ処理していなければ、ブロックの中を実行する
+    # 処理済みの場合はこのブロックは実行されない
+    ProcessedLineEvent.record_once(event.webhook_event_id) do
+      outcome = RecordMessageHandler.call(user: user, text: event.message.text, performed_on: Date.current)
+    end
+    # outcome が存在して、なおかつ保存成功なら先へ進む
+    return unless outcome&.status == :saved
+
+    LineBot.reply(event.reply_token, LineMessages.recorded(outcome.saved))
+  end
+
+  # SPEC 4.2.1 follow。表示名の取得（外部 API・SPEC 2.3 の例外）は新規ユーザーのときだけ行う
+  # （既存ユーザーの表示名は follow で再取得しない: SPEC 4.1.1）
+  def handle_follow(event)
+    line_user_id = event.source.user_id
+    display_name = User.exists?(line_user_id: line_user_id) ? nil : LineBot.fetch_display_name(line_user_id)
+
+    greeting = nil
+    # 登録済み（再送・並行受信）のイベントはブロックが実行されずスキップされる（SPEC 4.2.4）
+    ProcessedLineEvent.record_once(event.webhook_event_id) do
+      _user, greeting = User.follow_from_line!(line_user_id: line_user_id, display_name: display_name)
+    end
+    return unless greeting
+
+    text = greeting == :welcome_back ? LineMessages.welcome_back : LineMessages.welcome
+    LineBot.reply(event.reply_token, text)
+  end
+
+  # SPEC 4.2.1 unfollow。フラグのみ。返信先（replyToken）は無い
+  def handle_unfollow(event)
+    ProcessedLineEvent.record_once(event.webhook_event_id) do
+      User.unfollow_from_line!(line_user_id: event.source.user_id)
+    end
   end
 end
