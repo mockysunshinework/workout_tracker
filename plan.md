@@ -512,10 +512,22 @@
     - TDD: Workout 7 examples → RED（NoMethodError）→ GREEN。競合 spec が `RecordInvalid` で失敗し、上記の「相手コミット済み」経路の rescue を追加して GREEN。handler 8 examples・`LineMessages.recorded` 2 examples → RED（`uninitialized constant`）→ GREEN。request spec `spec/requests/line_record_message_spec.rb` 7 examples → RED 5 件（message イベント未処理で保存 0 件）・2 件は現状挙動の回帰ガード（未知種目・スタンプで保存しない）→ GREEN。REFACTOR: `handle_message` のガード分岐を明示化（`&&` で真偽値とレコードを混ぜていた）
     - 品質・セキュリティ: RSpec 全件 326 examples 0 failures・RuboCop 指摘なし・Brakeman 警告 0（Webhook 処理の変更のため実行）
   - レビュー指摘に対応（2026-09-27・PR #69 の @claude レビュー。approve 表明・ブロッカーなし）: 「同じ種目を複数行に分けて送るとエコーバックの種目名が重複し、各行に当日セット数が付く」→ **正当・修正**。実際に `ベンチプレス60/5` / `懸垂/10/2` / `ベンチプレス70/3` の 3 行で再現: 保存と採番は正しい（ベンチ 1: 60×5、2: 70×3）が、エコーバックは `ベンチプレス 60kg×5回×1セット（本日 計2セット）` と `ベンチプレス 70kg×3回×1セット（本日 計2セット）` に分かれ、同じ結果になる 1 行入力 `ベンチプレス60/5 70/3` と表示が食い違っていた。2 行分けは想定する入力（ユーザー確認）のため、拒否ではなく **handler の保存処理で種目ごとにまとめる**（初出の順・グループは行の順で個別列挙のまま）方式を採用。`append_sets!` も種目ごと 1 回になる。RED: handler spec で entries が `["ベンチプレス", "懸垂", "ベンチプレス"]`、request spec で分かれた表示を確認 → GREEN。もう 1 点の「CI 環境で RSpec を実行できなかった」は情報提供で対応不要（ローカルと CI の test ジョブで実行済み）
-- [ ] 9.5 エラー応答の実装
+- [x] 9.5 エラー応答の実装
   - 実施内容: パース失敗（失敗行とフォーマット例を返信、全行不保存）、User 未作成の送信者（仕様書 4.1.1 の自己修復: find_or_create してから通常処理。版 3.0 で「未連携ユーザーへの連携手順案内」から変更）、その他テキスト（ヘルプ案内）を実装する（仕様書 4.2.1 / 4.2.3）
   - テスト種別: request spec
   - 完了条件: 3 ケースの spec が通り、パース失敗時に DB へ一切保存されないことを確認
+  - 作業分解（tdd-dev 実行管理用）:
+    - [x] RecordMessageHandler: 記録の形でないテキスト（`/` を含む行がない）を `:unrecognized` として区別
+    - [x] LineMessages: パース失敗（失敗行＋理由＋入力例）/ ヘルプ / invalid の返信文
+    - [x] Webhook: User 未作成の自己修復と、Outcome ごとの返信（request spec）
+  - 実施結果（2026-09-30・ブランチ `feat/f04-error-replies`）:
+    - **「パース失敗」と「その他テキスト」の区別**（仕様書 4.2.1 は「記録フォーマット / 上記以外」、4.2.3 は「失敗行と例を返信」で、境界は未定義だったため実装詳細として決定）: `RecordMessageHandler` はパース失敗時、**テキストに `/`（NFKC 後）を含む行が 1 つでもあれば `:parse_failed`、なければ `:unrecognized`**。`こんにちは` や旧記法 `ベンチ 60 5 3` は後者で入力案内のみ（9.1「推測補正せず形式の案内のみ」と整合）、`ベンチプレス60/` のような書き損じは前者で失敗行を示す。行数超過などメッセージ全体の失敗は `:parse_failed`
+    - `LineMessages.parse_failed(parse_result)`: 「保存していません（1 行でも失敗すると全行が未保存）」＋ `N行目「原文」: 理由` の列挙（メッセージ全体の失敗は行番号なし）＋ `input_guide`。理由コード → 文言は `PARSE_ERROR_REASONS`（上限値はパーサーの定数から埋め込み）。`LineMessages.unrecognized`: 「記録として読み取れませんでした」＋ `input_guide`。`LineMessages.invalid(messages)`: 「保存できなかったため保存していません」＋検証エラー（9.4 の申し送り分）＋ `input_guide`
+    - コントローラ: `User.find_by` を **`User.find_or_create_from_line!(display_name: nil)` に置換**（4.1.1 の自己修復）。表示名は取得しない — Get profile は仕様書 2.3 で follow 時だけ許可された外部呼び出しのため、フォールバック名 `LINE ユーザー` で作成し、次回の LINE Login（`update_name: true`）で更新される。**`record_once` の外で作成する**理由: 並行作成（初回メッセージと初回 LINE Login の同時接触）で `RecordNotUnique` がトランザクション内で起きると PG はトランザクションを中断し `find_by!` が失敗するため。外なら `create!` 単体のトランザクションが巻き戻り、`find_by!` で既存行を返せる
+    - 返信の振り分けは `reply_text_for(outcome)`（`:saved` / `:parse_failed` / `:unrecognized` / `:invalid`。`:unknown_exercises` は nil ＝ 返信なし。候補提案の返信は 10.5）。返信はいずれも `record_once` のコミット後
+    - TDD: handler spec +3（`:unrecognized` の 3 例 / `:parse_failed` の行別理由 / 行数超過）→ RED（`:parse_failed` が返る）→ GREEN。`line_messages_spec` +4 → RED（NoMethodError ×3）→ GREEN。`spec/requests/line_message_error_replies_spec.rb` 6 examples（パース失敗で成功行も含め DB 0 件・失敗行の返信 / その他テキストで案内 / 検証エラーで理由 / 返信 400 でも 200 / **User 未作成で作成＋保存＋エコーバック** / User 未作成＋雑談で作成＋案内・Get profile を呼ばない）→ RED 5 件（返信なし・User 作成なし）＋回帰ガード 1 件 → GREEN。REFACTOR: 判定なし
+    - 品質・セキュリティ: RSpec 全件 340 examples 0 failures・RuboCop 指摘なし・Brakeman 警告 0（Webhook 処理の変更のため実行）
+    - 備考: request spec の Webhook 用ヘルパー（`post_event` / `text_event` / 署名計算）は 8.9・9.4 の spec と同じものを各ファイルに持つ（3 か所目）。`spec/support` への共通化は既存 2 ファイルも含めて行う必要があるため本項目では見送り、12.2 の全体整理の候補とする
 - [ ] 9.6 Reply API 呼び出し条件の実装
   - 実施内容: Reply は DB コミット後に呼び出し、短いタイムアウト（7.1 の確認結果に基づき決定）を設定、失敗時はリトライ・ロールバックせずログ記録に留める（仕様書 2.3 / 4.2.4）
   - テスト種別: unit/request spec（Reply 失敗でも記録が保存済みであること）
