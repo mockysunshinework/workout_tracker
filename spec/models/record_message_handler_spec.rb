@@ -77,12 +77,28 @@ RSpec.describe RecordMessageHandler, type: :model do
   end
 
   describe "保存しないケース（部分保存しない・SPEC 4.2.3）" do
-    it "パース失敗は :parse_failed を返し、何も保存しない" do
-      outcome = handle("ベンチプレス 60 5 3")
+    # 9.5: 記録の形（`重量/回数`）を含む行が 1 つもないテキストは「その他テキスト」（SPEC 4.2.1 → ヘルプ案内）。
+    # 旧記法 `ベンチ 60 5 3` もここに入る（推測補正せず形式の案内のみ・9.1）
+    it "記録の形を含む行がないテキストは :unrecognized を返し、何も保存しない" do
+      expect(handle("こんにちは").status).to eq :unrecognized
+      expect(handle("ベンチプレス 60 5 3").status).to eq :unrecognized
+      expect(handle("ありがとう\nまた明日").status).to eq :unrecognized
+      expect(Workout.count).to eq 0
+    end
+
+    it "記録の形を含む行があって失敗した場合は :parse_failed を返し、何も保存しない" do
+      outcome = handle("ベンチプレス60/5\nベンチプレス60/\nこんにちは")
 
       expect(outcome.status).to eq :parse_failed
-      expect(outcome.parse_result.errors.map(&:reason)).to eq [ :missing_group ]
+      expect(outcome.parse_result.errors.map { |e| [ e.line_number, e.reason ] }).to eq [ [ 2, :invalid_group ], [ 3, :missing_group ] ]
       expect(Workout.count).to eq 0
+    end
+
+    it "行数超過などメッセージ全体の失敗も :parse_failed" do
+      outcome = handle(Array.new(21) { |i| "種目#{i} 60/5" }.join("\n"))
+
+      expect(outcome.status).to eq :parse_failed
+      expect(outcome.parse_result.errors.map(&:reason)).to eq [ :too_many_lines ]
     end
 
     it "未知の種目を含む場合は :unknown_exercises を返し、既知の行も含めて何も保存しない" do

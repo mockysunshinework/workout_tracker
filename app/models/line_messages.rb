@@ -33,6 +33,47 @@ module LineMessages
     TEXT
   end
 
+  # パース失敗の理由コード（RecordMessageParser::Error#reason）→ 利用者向けの説明
+  PARSE_ERROR_REASONS = {
+    empty_message: "内容が空です",
+    too_many_lines: "1 回に送れるのは #{RecordMessageParser::MAX_LINES} 行までです",
+    missing_exercise_name: "種目名がありません",
+    missing_group: "重量/回数 の部分が見つかりません",
+    invalid_group: "重量/回数/セット数 の形式が正しくありません",
+    weight_out_of_range: "重量は 0〜999.9 の範囲で、小数は 1 桁までです",
+    reps_out_of_range: "回数は 1〜#{RecordMessageParser::MAX_REPS} の範囲にしてください",
+    sets_out_of_range: "セット数は 1〜#{RecordMessageParser::MAX_SETS} の範囲にしてください"
+  }.freeze
+
+  # パース失敗（SPEC 4.2.3）: 失敗した行と理由、全行未保存であること、正しい形式の例を返す。推測補正はしない
+  def parse_failed(parse_result)
+    details = parse_result.errors.map do |error|
+      reason = PARSE_ERROR_REASONS.fetch(error.reason)
+      error.line_number ? "#{error.line_number}行目「#{error.line}」: #{reason}" : reason
+    end
+    <<~TEXT.chomp
+      記録の形式が読み取れなかった行があるため、保存していません（1 行でも失敗すると全行が未保存になります）。
+      #{details.join("\n")}
+
+      #{input_guide}
+    TEXT
+  end
+
+  # 記録の形でないテキスト（SPEC 4.2.1「上記以外」）: 入力方法の案内
+  def unrecognized
+    "記録として読み取れませんでした。\n\n#{input_guide}"
+  end
+
+  # 保存時の検証エラー（例: 重量が必要な種目に自重で入力）: 理由と入力方法の案内
+  def invalid(messages)
+    <<~TEXT.chomp
+      記録を保存できなかったため、保存していません。
+      #{messages.join("\n")}
+
+      #{input_guide}
+    TEXT
+  end
+
   # 自重（nil）は「自重」、それ以外は末尾の .0 を落として kg を付ける（60 → 60kg、62.5 → 62.5kg）
   def format_weight(weight_kg)
     return "自重" if weight_kg.nil?
