@@ -528,6 +528,7 @@
     - TDD: handler spec +3（`:unrecognized` の 3 例 / `:parse_failed` の行別理由 / 行数超過）→ RED（`:parse_failed` が返る）→ GREEN。`line_messages_spec` +4 → RED（NoMethodError ×3）→ GREEN。`spec/requests/line_message_error_replies_spec.rb` 6 examples（パース失敗で成功行も含め DB 0 件・失敗行の返信 / その他テキストで案内 / 検証エラーで理由 / 返信 400 でも 200 / **User 未作成で作成＋保存＋エコーバック** / User 未作成＋雑談で作成＋案内・Get profile を呼ばない）→ RED 5 件（返信なし・User 作成なし）＋回帰ガード 1 件 → GREEN。REFACTOR: 判定なし
     - 品質・セキュリティ: RSpec 全件 340 examples 0 failures・RuboCop 指摘なし・Brakeman 警告 0（Webhook 処理の変更のため実行）
     - 備考: request spec の Webhook 用ヘルパー（`post_event` / `text_event` / 署名計算）は 8.9・9.4 の spec と同じものを各ファイルに持つ（3 か所目）。`spec/support` への共通化は既存 2 ファイルも含めて行う必要があるため本項目では見送り、12.2 の全体整理の候補とする
+  - レビュー指摘に対応（2026-10-01・PR #73 の @claude レビュー。approve 表明・ブロッカーなし。軽微 2 件はいずれも任意）: (1) request spec に残るコメントアウト行（`sole` を使えば 1 行にまとめられる旨の学習メモ）→ **残す（ユーザー決定・備忘録。6.3 の JS 説明コメントと同じ扱い）**。(2) `record_like?` は `/` の有無だけで判定するため `こんにちは/ありがとう` のような雑談も `:parse_failed` になる → **正当だが修正不要**。実際に確認: `1行目「こんにちは/ありがとう」: 重量/回数/セット数 の形式が正しくありません` ＋入力案内が返る。案内は届くので実害はなく、`/` を含む雑談は稀。境界を精密化する（数字を伴う `/` だけを記録の形とみなす等）と `懸垂/10` の自重形式との整合を崩しやすいため現状維持。運用で違和感が出た時に見直す。補足で触れられた「`PARSE_ERROR_REASONS.fetch` は未定義の理由コードで KeyError」も現状は全網羅のため対応なし（理由コードの追加はパーサー側の変更で、その際に文言も追加する）
 - [ ] 9.6 Reply API 呼び出し条件の実装
   - 実施内容: Reply は DB コミット後に呼び出し、短いタイムアウト（7.1 の確認結果に基づき決定）を設定、失敗時はリトライ・ロールバックせずログ記録に留める（仕様書 2.3 / 4.2.4）
   - テスト種別: unit/request spec（Reply 失敗でも記録が保存済みであること）
