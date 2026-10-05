@@ -6,7 +6,9 @@
 module RecordMessageHandler
   # 処理結果。status ごとに使うフィールドが決まる:
   #   :saved             saved（エコーバック用の保存内容）
-  #   :parse_failed      parse_result（失敗行と理由。返信は 9.5）
+  #   :unrecognized      記録の形（`重量/回数`）を含む行が 1 つもない「その他テキスト」（SPEC 4.2.1 → ヘルプ案内）。
+  #                      旧記法 `ベンチ 60 5 3` もここ（推測補正せず形式の案内のみ・9.1）
+  #   :parse_failed      parse_result（記録の形の行があって失敗。失敗行と理由を返信する・9.5）
   #   :unknown_exercises unknown_names（照合できなかった種目名。候補提案は 10 章）
   #   :invalid           invalid_messages（モデル検証のエラー。例: 重量が必要な種目に自重で入力）
   Outcome = Data.define(:status, :saved, :parse_result, :unknown_names, :invalid_messages) do
@@ -24,7 +26,10 @@ module RecordMessageHandler
 
   def call(user:, text:, performed_on:)
     parse_result = RecordMessageParser.call(text)
-    return Outcome.new(status: :parse_failed, parse_result: parse_result) unless parse_result.success?
+    unless parse_result.success?
+      status = record_like?(text) ? :parse_failed : :unrecognized
+      return Outcome.new(status: status, parse_result: parse_result)
+    end
 
     resolved = parse_result.entries.map { |entry| [ Exercise.find_exact_match(user: user, name: entry.exercise_name), entry ] }
     unknown_names = resolved.filter_map { |exercise, entry| entry.exercise_name if exercise.nil? }.uniq
@@ -60,5 +65,11 @@ module RecordMessageHandler
     end
   end
 
-  private_class_method :save
+  # 記録として書こうとしたテキストか（`/` を含む行が 1 つでもあれば記録の形とみなす）。
+  # 「こんにちは」のような雑談と、`ベンチプレス60/` のような書き損じを返信文で区別するため
+  def record_like?(text)
+    text.to_s.unicode_normalize(:nfkc).include?("/")
+  end
+
+  private_class_method :save, :record_like?
 end

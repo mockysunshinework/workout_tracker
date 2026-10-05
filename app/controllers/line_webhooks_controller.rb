@@ -45,17 +45,18 @@ class LineWebhooksController < ApplicationController
     end
   end
 
-  # SPEC 4.2.1 message（テキスト）: 記録フォーマットなら保存してエコーバック（9.4）。
-  # 記録日は受信日（JST。Date.current はアプリのタイムゾーン = Tokyo）。
-  # 未実装の分岐は冪等 ID だけ記録して受領する: テキスト以外のメッセージ / User 未作成の送信者（9.5 の
-  # 自己修復）/ パース失敗・その他テキスト（9.5 の案内返信）/ 未知の種目（10 章の候補提案）
+  # SPEC 4.2.1 message（テキスト）: 記録フォーマットなら保存してエコーバック（9.4）、
+  # 失敗や記録の形でないテキストは案内を返信（9.5）。記録日は受信日（JST。Date.current はアプリの
+  # タイムゾーン = Tokyo）。テキスト以外のメッセージは冪等 ID だけ記録して受領する
   def handle_message(event)
     # テキストメッセージでない場合には、このイベントは処理済みと記録して終了
     return ProcessedLineEvent.record_once(event.webhook_event_id) unless event.message.is_a?(Line::Bot::V2::Webhook::TextMessageContent)
 
-    user = User.find_by(line_user_id: event.source.user_id)
-    # アプリ側にUserが存在しないLINEユーザーなら筋トレ記録処理はせずにイベントを処理済とする
-    return ProcessedLineEvent.record_once(event.webhook_event_id) unless user
+    # follow を受信していない送信者も同じ find_or_create で作成して通常どおり処理する（SPEC 4.1.1 の自己修復）。
+    # 表示名は取得しない（Get profile は follow 時だけ許可された外部呼び出し: SPEC 2.3）ので
+    # フォールバック名になり、次回の LINE Login で更新される。record_once の外で行うのは、
+    # 並行作成の unique 制約違反をトランザクション内で起こすと以降の SQL が失敗するため
+    user = User.find_or_create_from_line!(line_user_id: event.source.user_id, display_name: nil)
 
     outcome = nil
     # このWebhookイベントをまだ処理していなければ、ブロックの中を実行する
@@ -63,10 +64,20 @@ class LineWebhooksController < ApplicationController
     ProcessedLineEvent.record_once(event.webhook_event_id) do
       outcome = RecordMessageHandler.call(user: user, text: event.message.text, performed_on: Date.current)
     end
-    # outcome が存在して、なおかつ保存成功なら先へ進む
-    return unless outcome&.status == :saved
+    return unless outcome
 
-    LineBot.reply(event.reply_token, LineMessages.recorded(outcome.saved))
+    text = reply_text_for(outcome)
+    LineBot.reply(event.reply_token, text) if text
+  end
+
+  # Outcome → 返信文。nil は「返信しない」（未知の種目: 候補提案の返信は 10 章で実装する）
+  def reply_text_for(outcome)
+    case outcome.status
+    when :saved then LineMessages.recorded(outcome.saved)
+    when :parse_failed then LineMessages.parse_failed(outcome.parse_result)
+    when :unrecognized then LineMessages.unrecognized
+    when :invalid then LineMessages.invalid(outcome.invalid_messages)
+    end
   end
 
   # SPEC 4.2.1 follow。表示名の取得（外部 API・SPEC 2.3 の例外）は新規ユーザーのときだけ行う
