@@ -51,6 +51,48 @@ RSpec.describe LineMessages do
     end
   end
 
+  # 9.5 エラー応答（SPEC 4.2.3 / 4.2.1）
+  describe ".parse_failed" do
+    it "失敗した行と理由、全行未保存であること、入力例（input_guide）を含む" do
+      result = RecordMessageParser.call("ベンチプレス60/5\nベンチプレス60/\nベンチプレス1000/5")
+      text = described_class.parse_failed(result)
+
+      expect(text).to include("保存していません")
+      expect(text).to include("2行目「ベンチプレス60/」")
+      expect(text).to include("3行目「ベンチプレス1000/5」")
+      expect(text).to match(/3行目.*重量/)
+      expect(text).not_to include("1行目")
+      expect(text).to include(described_class.input_guide)
+    end
+
+    it "メッセージ全体の失敗（行数超過）は行番号なしで理由を示す" do
+      result = RecordMessageParser.call(Array.new(21) { |i| "種目#{i} 60/5" }.join("\n"))
+      text = described_class.parse_failed(result)
+
+      expect(text).to include("20 行")
+      expect(text).not_to include("行目")
+    end
+  end
+
+  describe ".unrecognized" do
+    it "記録として読み取れなかったことと入力案内を返す" do
+      text = described_class.unrecognized
+
+      expect(text).to include("読み取れませんでした")
+      expect(text).to include(described_class.input_guide)
+    end
+  end
+
+  describe ".invalid" do
+    it "保存できなかった理由と入力案内を返す" do
+      text = described_class.invalid([ "ベンチプレス: 重量を入力してください" ])
+
+      expect(text).to include("保存していません")
+      expect(text).to include("ベンチプレス: 重量を入力してください")
+      expect(text).to include(described_class.input_guide)
+    end
+  end
+
   it "welcome / welcome_back は input_guide を含む" do
     expect(described_class.welcome).to include(described_class.input_guide)
     expect(described_class.welcome_back).to include(described_class.input_guide)
