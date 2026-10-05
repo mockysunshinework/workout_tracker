@@ -115,6 +115,31 @@ RSpec.describe "LINE Webhook: 記録メッセージ", type: :request do
     expect(persisted_at_reply).to eq 3
   end
 
+  # 9.6 Reply API の呼び出し条件（SPEC 2.3 / 4.2.4）: 返信の失敗は記録の保存に波及させず、リトライもせず、
+  # ログに残すだけ。保存はコミット済みなので Webhook は 200 を返す（再送させない）
+  it "Reply が 200 以外（期限切れ token の 400 等）でも記録は保存されたまま 200 を返し、警告ログを残す（リトライしない）" do
+    allow(client).to receive(:reply_message_with_http_info).and_return([ nil, 400, {} ])
+    allow(Rails.logger).to receive(:warn)
+
+    post_event(text_event("ベンチプレス60/5/3"))
+
+    expect(response).to have_http_status(:ok)
+    expect(sets_of(bench).size).to eq 3
+    expect(client).to have_received(:reply_message_with_http_info).once
+    expect(Rails.logger).to have_received(:warn).with(/Reply failed.*400/i)
+  end
+
+  it "Reply が通信例外（タイムアウト等）でも記録は保存されたまま 200 を返し、例外クラスをログに残す" do
+    allow(client).to receive(:reply_message_with_http_info).and_raise(Net::ReadTimeout)
+    allow(Rails.logger).to receive(:warn)
+
+    post_event(text_event("ベンチプレス60/5/3"))
+
+    expect(response).to have_http_status(:ok)
+    expect(sets_of(bench).size).to eq 3
+    expect(Rails.logger).to have_received(:warn).with(/Reply failed.*Net::ReadTimeout/)
+  end
+
   it "再送（同一 webhookEventId）では二重保存も再返信もしない" do
     post_event(text_event("ベンチプレス60/5/3"))
 
