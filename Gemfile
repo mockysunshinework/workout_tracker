@@ -25,7 +25,7 @@ gem "rails-i18n"
 gem "devise-i18n"
 
 # Official LINE Messaging API SDK (7.3). v2 line; the 1.x interface is incompatible
-gem "line-bot-api", "~> 2.10"
+gem "line-bot-api", "~> 2.11"
 
 # LINE Login via OpenID Connect for web sign-in (8.4). OmniAuth 2 rejects GET on the
 # request phase, so the CSRF-protection gem is required for the POST-based login button
