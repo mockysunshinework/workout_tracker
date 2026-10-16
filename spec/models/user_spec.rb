@@ -146,4 +146,20 @@ RSpec.describe User, type: :model do
       }.not_to change(User, :count)
     end
   end
+
+  # 10.2c ユーザー削除時は別名も消す（プリセットを指す別名は種目側からは消えないため・SPEC 4.5）
+  describe "別名の連鎖削除" do
+    it "destroy すると、プリセットを指す別名も含めて自分の別名がすべて消える" do
+      user = create(:user)
+      preset = create(:exercise, :preset, name: "ベンチプレス")
+      to_preset = create(:exercise_alias, :confirmed, user: user, exercise: preset, alias: "ベンチ")
+      to_own = create(:exercise_alias, user: user, exercise: create(:exercise, user: user))
+
+      user.destroy!
+
+      expect(ExerciseAlias.exists?(to_preset.id)).to be false
+      expect(ExerciseAlias.exists?(to_own.id)).to be false
+      expect(Exercise.exists?(preset.id)).to be true
+    end
+  end
 end

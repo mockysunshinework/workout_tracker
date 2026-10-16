@@ -138,6 +138,65 @@ RSpec.describe Exercise, type: :model do
     end
   end
 
+  # 10.2c 確認済みの別名を照合に組み込む（SPEC 4.3.1(2) 手順 1: 独自種目 → 確認済み別名 → プリセット）
+  describe ".find_exact_match と別名（SPEC 4.3.1(4)）" do
+    let(:user) { create(:user) }
+    let!(:bench) { create(:exercise, :preset, name: "ベンチプレス") }
+
+    it "確認済みの別名は正規化して一致し、指している種目を返す（プリセットを指す別名も可）" do
+      create(:exercise_alias, :confirmed, user: user, exercise: bench, alias: "ベンチ")
+
+      expect(described_class.find_exact_match(user: user, name: "べんち　")).to eq bench
+    end
+
+    it "未確認の別名は一致しない" do
+      create(:exercise_alias, user: user, exercise: bench, alias: "ベンチ")
+
+      expect(described_class.find_exact_match(user: user, name: "ベンチ")).to be_nil
+    end
+
+    it "他ユーザーの確認済み別名には一致しない" do
+      create(:exercise_alias, :confirmed, user: create(:user), exercise: bench, alias: "ベンチ")
+
+      expect(described_class.find_exact_match(user: user, name: "ベンチ")).to be_nil
+    end
+
+    it "別名と同じ名前の独自種目を後から作った場合は独自種目が勝つ" do
+      create(:exercise_alias, :confirmed, user: user, exercise: bench, alias: "ベンチ")
+      mine = create(:exercise, user: user, name: "ベンチ")
+
+      expect(described_class.find_exact_match(user: user, name: "ベンチ")).to eq mine
+    end
+
+    it "別名はプリセットより優先される（プリセットと同じ名前の別名が別の種目を指す場合）" do
+      incline = create(:exercise, :preset, name: "インクラインベンチプレス")
+      create(:exercise_alias, :confirmed, user: user, exercise: incline, alias: "ベンチプレス")
+
+      expect(described_class.find_exact_match(user: user, name: "ベンチプレス")).to eq incline
+    end
+  end
+
+  describe "別名の連鎖削除（SPEC 4.5）" do
+    it "別名付きの種目（記録なし）を destroy すると別名も消える" do
+      exercise = create(:exercise)
+      alias_record = create(:exercise_alias, user: exercise.user, exercise: exercise)
+
+      exercise.destroy
+
+      expect(described_class.exists?(exercise.id)).to be false
+      expect(ExerciseAlias.exists?(alias_record.id)).to be false
+    end
+
+    it "使用中の種目は別名があっても従来どおり削除できず、別名も残る" do
+      exercise = create(:exercise)
+      create(:workout_set, exercise: exercise)
+      alias_record = create(:exercise_alias, user: exercise.user, exercise: exercise)
+
+      expect(exercise.destroy).to be false
+      expect(ExerciseAlias.exists?(alias_record.id)).to be true
+    end
+  end
+
   describe "削除制限（使用中の記録がある種目は削除不可・SPEC 4.3）" do
     it "workout_sets で使用中の種目は destroy できず、レコードが残る" do
       exercise = create(:exercise)

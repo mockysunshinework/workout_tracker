@@ -568,11 +568,23 @@
     - 保持は別テーブル **`exercise_aliases`**（user_id・exercise_id・alias・normalized_alias・`confirmed` boolean、unique `[user_id, normalized_alias]`）。配列列は検索と一意性が書きにくく、プリセットの別名を seed で持つ案は人によって意味が違うため不採用
     - 照合順は「独自種目 → 別名（confirmed のみ） → プリセット」。未確認行の置き換えは削除＋新規作成（id 再採番）で stale な [はい] を無効化。data は `action=alias_confirm&alias_id=` / `action=alias_decline&alias_id=`
     - レビュー指摘に対応（2026-10-06・ユーザー承認）: (1) **種目削除時は別名も連鎖削除**（`Exercise` / `User` に `has_many :exercise_aliases, dependent: :destroy`）。仕様書の「Stage 1 に種目削除は無いので実装時に確定」は誤りで、5.4 で削除を実装済み。別名付きの種目を Web で消すと FK 違反で 500 になるため今決めた。workout_sets の削除制限が先に効くので使用中の種目は従来どおり消えない (2) **確定した別名の解除手段は Stage 1 では持たない**。別名は 1 行のデータで、解除（Web の一覧・削除や LINE コマンド）はデータ構造を変えずに後から追加できる。それまでは正式名称で送れば回避できる (3) 未確認行の作成は候補選択時ではなく**一括保存の時点**に統一（途中キャンセルで行が残らない）。確認文の略称・種目名は別名行から取る（保留は保存時に消える） (4) plan.md 冒頭の仕様書版数を 3.4 に更新
-- [ ] 10.2c exercise_aliases テーブルの作成と完全一致照合への組み込み
+- [x] 10.2c exercise_aliases テーブルの作成と完全一致照合への組み込み
   - 実施内容: 仕様書 4.5 の定義で `exercise_aliases` を作成（user_id FK、exercise_id FK、alias、normalized_alias、confirmed、unique index `[user_id, normalized_alias]`、index `[exercise_id]`）し、9.3 の完全一致検索を「独自種目 → 確認済み別名 → プリセット」の順に拡張する。`Exercise` と `User` に `has_many :exercise_aliases, dependent: :destroy` を追加する（種目・ユーザーの削除で別名も消える。仕様書 4.5）
   - 対象: `exercise_aliases` テーブル、`ExerciseAlias` モデル、`Exercise` の照合 class method、`Exercise` / `User` の関連
   - テスト種別: model spec
   - 完了条件: マイグレーション成功、同一ユーザー同一別名の 2 件目が拒否されること、確認済み別名が一致し未確認別名が一致しないこと、同名の独自種目が別名より優先されること、別名付きの種目（記録なし）を destroy すると別名も消えること、使用中の種目は別名があっても従来どおり削除できないことの spec が通る
+  - 作業分解（tdd-dev 実行管理用）:
+    - [x] `exercise_aliases` テーブルと `ExerciseAlias` モデル（正規化の自動設定・ユーザー内一意・指せる種目は自分の独自種目かプリセット）
+    - [x] `Exercise.find_exact_match` に確認済み別名を組み込む（独自種目 → 確認済み別名 → プリセット）
+    - [x] 削除の連鎖（`Exercise` / `User` の `dependent: :destroy`。使用中種目の削除制限は維持）
+  - 実施結果（2026-10-07・ブランチ `feat/f03-exercise-aliases`）: `db/migrate/20261007090000_create_exercise_aliases.rb`（仕様書 4.5 どおり。user_id の単独 index は複合 index が先頭列でカバーするため作らない: 3.2 / 4.1 と同判断）、`app/models/exercise_alias.rb`、`spec/factories/exercise_aliases.rb`、`config/locales/ja.yml` にモデル名・属性名を追加
+    - `ExerciseAlias`: `belongs_to :user / :exercise`、`scope :confirmed`、`alias` presence、`normalized_alias` を `ExerciseNameNormalizer` で自動設定（表記は入力どおり保持）、ユーザー内一意はモデル検証（エラーは `:alias` に付ける。3.4 と同方針）＋ DB unique index の二層。**仕様外で追加した検証**: 指せる種目は自分の独自種目かプリセットのみ（他ユーザーの独自種目は `:exercise` invalid。CLAUDE.md のユーザーデータ分離）
+    - `Exercise.find_exact_match`: `owned_by(user)` → `user.exercise_aliases.confirmed`（`normalized_alias` 一致の `exercise`）→ `preset` の 3 段。未確認・他ユーザーの別名は一致しない。別名と同名の独自種目は独自種目が勝ち、プリセットと同名の別名は別名が勝つ（spec で固定）
+    - 連鎖削除: `Exercise has_many :exercise_aliases, dependent: :destroy` は `workout_sets` の `restrict_with_error` の後に宣言（宣言順で削除制限が先に評価されるため、使用中の種目では別名も残る。spec で確認）。`User has_many :exercise_aliases, dependent: :destroy` は `exercises` より前に宣言（プリセットを指す別名は種目側からは消えないため）
+    - 注意: 列名 `alias` は Ruby の予約語のため、モデル内では `self.alias` で参照する（`alias` 単体は構文エラー）。factory / spec の `alias:` キーワードは問題なし
+    - TDD: `spec/models/exercise_alias_spec.rb`（10 examples）・`exercise_spec` +7・`user_spec` +1 → RED（`uninitialized constant ExerciseAlias`）→ テーブルとモデルで 1 段目 GREEN、残りは**振る舞いの RED を確認**（`find_exact_match` が nil / プリセットを返す、`destroy` が `InvalidForeignKey`）→ 照合と関連を実装して GREEN。spec の前提ミス 1 件を修正（`save(validate: false)` では before_validation も走らず `normalized_alias` が NULL になるため、unique index の検証では照合列を明示）。REFACTOR: 判定なし
+    - 品質: RSpec 全件 360 examples 0 failures・RuboCop 指摘なし。Brakeman はコントローラ・外部入力の変更なしのため未実行
+  - レビュー指摘に対応（2026-10-16・PR #81 の @claude レビュー。approve 表明・ブロッカーなし）: (1) 「`db/schema.rb` に無関係な差分（既存テーブルの列順の入れ替え）がある。手元の DB 状態か dump 方法が CI と異なる可能性」→ **一部正当・修正不要**。差分があるのは事実だが原因の推測は誤り。Rails 8.1.0 で schema.rb の列をアルファベット順に並べる変更が入り（activerecord CHANGELOG）、**8.1.4 でその変更が revert された**（`db:prepare` で本番テーブルの列順が不正になるため）。main の schema.rb は 8.1.3.1 で dump したアルファベット順、本ブランチは #71 で上がった 8.1.4 の dumper による作成順で、`bin/rails db:schema:dump` を再実行しても差分は出ない（現在の正規の形式）。この並べ替えは 8.1.4 以降の最初の dump で必ず 1 回起きるもので、本 PR に含まれたのは偶然。分離するには force push が必要なため行わない。反省点: 実装時の diff 確認では追加のみに見えたが、その後のテスト DB 準備で再 dump され並べ替えが入った。コミット前の最終 diff 確認を省いたのが原因で、以後はコミット直前に `git diff --stat` を見る (2) 「`ExerciseAlias` の一意性検証で user 未設定時は user_id が nil」→ 正当だが実害なし（`belongs_to` の必須検証が先に出る）。対応なし (3) 「`find_exact_match` が nil の user で呼ばれる想定はないはず」→ 正当。呼び出し元（`RecordMessageHandler`）は User 必須。nil なら `user.exercise_aliases` で NoMethodError になり黙って誤動作はしない。対応なし
 - [ ] 10.3 pending_workout_entries テーブルの作成
   - 実施内容: 仕様書 4.5 の定義で作成（user_id FK、source_text、parsed_lines jsonb、expires_at、**unique index `[user_id]`**）
   - 対象: `pending_workout_entries` テーブル

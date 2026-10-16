@@ -3,6 +3,9 @@ class Exercise < ApplicationRecord
   belongs_to :user, optional: true
   # 使用中の記録がある種目は削除不可（SPEC 4.3）。DB の FK 制約と二層で担保する。
   has_many :workout_sets, dependent: :restrict_with_error
+  # 別名は種目の付属情報なので種目と一緒に消す（SPEC 4.5）。上の削除制限が先に評価されるため、
+  # 使用中の種目では別名も消えない（宣言順に依存）
+  has_many :exercise_aliases, dependent: :destroy
 
   scope :preset, -> { where(user_id: nil) }
   scope :owned_by, ->(user) { where(user: user) }
@@ -15,14 +18,17 @@ class Exercise < ApplicationRecord
   before_validation :assign_normalized_name
 
   # LINE 入力の種目照合 手順 1（SPEC 4.3.1(2)）: 正規化した名前の完全一致で、ユーザー独自種目 →
-  # 共通プリセットの順に探す。一致しなければ nil（候補提案は 10 章の別フロー。ここでは推測しない）。
+  # ユーザーの確認済み別名（SPEC 4.3.1(4)）→ 共通プリセットの順に探す。一致しなければ nil
+  # （候補提案は 10 章の別フロー。ここでは推測しない）。
   # 入力名の正規化は保存時（assign_normalized_name）と同じ ExerciseNameNormalizer を使うので、
   # `ベンチぷれす` や末尾全角空白の表記ゆれは同じ normalized_name に畳まれて一致する
   def self.find_exact_match(user:, name:)
     normalized_name = ExerciseNameNormalizer.call(name)
     return nil if normalized_name.blank?
 
-    owned_by(user).find_by(normalized_name: normalized_name) || preset.find_by(normalized_name: normalized_name)
+    owned_by(user).find_by(normalized_name: normalized_name) ||
+      user.exercise_aliases.confirmed.find_by(normalized_alias: normalized_name)&.exercise ||
+      preset.find_by(normalized_name: normalized_name)
   end
 
   private
