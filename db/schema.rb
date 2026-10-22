@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_07_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_20_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -35,6 +35,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_090000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["user_id", "normalized_name"], name: "index_exercises_on_user_id_and_normalized_name", unique: true, nulls_not_distinct: true
+  end
+
+  create_table "pending_workout_entries", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.text "source_text", null: false
+    t.jsonb "parsed_lines", null: false
+    t.datetime "expires_at", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["user_id"], name: "index_pending_workout_entries_on_user_id", unique: true
   end
 
   create_table "processed_line_events", force: :cascade do |t|
@@ -83,6 +93,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_07_090000) do
   add_foreign_key "exercise_aliases", "exercises"
   add_foreign_key "exercise_aliases", "users"
   add_foreign_key "exercises", "users"
+  add_foreign_key "pending_workout_entries", "users"
   add_foreign_key "workout_sets", "exercises"
   add_foreign_key "workout_sets", "workouts"
   add_foreign_key "workouts", "users"

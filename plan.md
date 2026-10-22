@@ -585,10 +585,16 @@
     - TDD: `spec/models/exercise_alias_spec.rb`（10 examples）・`exercise_spec` +7・`user_spec` +1 → RED（`uninitialized constant ExerciseAlias`）→ テーブルとモデルで 1 段目 GREEN、残りは**振る舞いの RED を確認**（`find_exact_match` が nil / プリセットを返す、`destroy` が `InvalidForeignKey`）→ 照合と関連を実装して GREEN。spec の前提ミス 1 件を修正（`save(validate: false)` では before_validation も走らず `normalized_alias` が NULL になるため、unique index の検証では照合列を明示）。REFACTOR: 判定なし
     - 品質: RSpec 全件 360 examples 0 failures・RuboCop 指摘なし。Brakeman はコントローラ・外部入力の変更なしのため未実行
   - レビュー指摘に対応（2026-10-16・PR #81 の @claude レビュー。approve 表明・ブロッカーなし）: (1) 「`db/schema.rb` に無関係な差分（既存テーブルの列順の入れ替え）がある。手元の DB 状態か dump 方法が CI と異なる可能性」→ **一部正当・修正不要**。差分があるのは事実だが原因の推測は誤り。Rails 8.1.0 で schema.rb の列をアルファベット順に並べる変更が入り（activerecord CHANGELOG）、**8.1.4 でその変更が revert された**（`db:prepare` で本番テーブルの列順が不正になるため）。main の schema.rb は 8.1.3.1 で dump したアルファベット順、本ブランチは #71 で上がった 8.1.4 の dumper による作成順で、`bin/rails db:schema:dump` を再実行しても差分は出ない（現在の正規の形式）。この並べ替えは 8.1.4 以降の最初の dump で必ず 1 回起きるもので、本 PR に含まれたのは偶然。分離するには force push が必要なため行わない。反省点: 実装時の diff 確認では追加のみに見えたが、その後のテスト DB 準備で再 dump され並べ替えが入った。コミット前の最終 diff 確認を省いたのが原因で、以後はコミット直前に `git diff --stat` を見る (2) 「`ExerciseAlias` の一意性検証で user 未設定時は user_id が nil」→ 正当だが実害なし（`belongs_to` の必須検証が先に出る）。対応なし (3) 「`find_exact_match` が nil の user で呼ばれる想定はないはず」→ 正当。呼び出し元（`RecordMessageHandler`）は User 必須。nil なら `user.exercise_aliases` で NoMethodError になり黙って誤動作はしない。対応なし
-- [ ] 10.3 pending_workout_entries テーブルの作成
+- [x] 10.3 pending_workout_entries テーブルの作成
   - 実施内容: 仕様書 4.5 の定義で作成（user_id FK、source_text、parsed_lines jsonb、expires_at、**unique index `[user_id]`**）
   - 対象: `pending_workout_entries` テーブル
   - 完了条件: マイグレーション成功、同一ユーザー 2 件目の INSERT が拒否されることをテストで確認
+  - 実施結果（2026-10-20・ブランチ `feat/f03-pending-entries-table`）: `db/migrate/20261020090000_create_pending_workout_entries.rb`。モデルは 10.5 の作業のため、3.2 / 4.1 / 7.5a と同方針で生 SQL の `spec/db/pending_workout_entries_table_spec.rb`（9 examples）を追加
+    - 列: `user_id`（FK・NOT NULL・単独 index は unique index が兼ねるため `index: false`）、`source_text` text、`parsed_lines` jsonb、`expires_at` datetime（いずれも NOT NULL）、timestamps。unique index `[user_id]`
+    - spec: 同一ユーザー 2 件目の拒否（完了条件）/ 別ユーザーは可 / 削除後の再登録は可（置き換えは削除＋新規作成・SPEC 4.3.1(3)）/ user_id・source_text・parsed_lines・expires_at の NOT NULL / 存在しない user_id の FK 違反 / jsonb としての格納と JSON でない文字列の拒否
+    - TDD: spec → RED（`PG::UndefinedTable`）→ マイグレーション → GREEN。schema.rb の差分はコミット前に確認（テーブル追加・FK・version のみ。PR #81 の反省を反映）。REFACTOR: 判定なし
+    - 品質: RSpec 全件 369 examples 0 failures・RuboCop 指摘なし。Brakeman はコントローラ・外部入力の変更なしのため未実行
+    - 環境メモ: テスト DB のマイグレーションが、ターミナルに残っていた `rspec`（`pp` で止まったまま 4 日間トランザクションを開いていたもの）のロック待ちで一時停止した（2 回目）。spec 内でデバッガや `pp` で止めたら、終了時にプロセスを抜けること
 - [ ] 10.4 候補検索の実装
   - 実施内容: 正規化名の前方一致・部分一致（＋10.1 で採用した場合は類似度検索）で候補を関連度順に最大 4 件返す検索を実装する（仕様書 4.3.1(2)）
   - テスト種別: unit spec（`ベンチ` → `ベンチプレス` 等）
