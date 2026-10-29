@@ -595,10 +595,20 @@
     - TDD: spec → RED（`PG::UndefinedTable`）→ マイグレーション → GREEN。schema.rb の差分はコミット前に確認（テーブル追加・FK・version のみ。PR #81 の反省を反映）。REFACTOR: 判定なし
     - 品質: RSpec 全件 369 examples 0 failures・RuboCop 指摘なし。Brakeman はコントローラ・外部入力の変更なしのため未実行
     - 環境メモ: テスト DB のマイグレーションが、ターミナルに残っていた `rspec`（`pp` で止まったまま 4 日間トランザクションを開いていたもの）のロック待ちで一時停止した（2 回目）。spec 内でデバッガや `pp` で止めたら、終了時にプロセスを抜けること
-- [ ] 10.4 候補検索の実装
+- [x] 10.4 候補検索の実装
   - 実施内容: 正規化名の前方一致・部分一致（＋10.1 で採用した場合は類似度検索）で候補を関連度順に最大 4 件返す検索を実装する（仕様書 4.3.1(2)）
   - テスト種別: unit spec（`ベンチ` → `ベンチプレス` 等）
   - 完了条件: 候補の抽出・順序・上限の spec が通る
+  - 作業分解（tdd-dev 実行管理用）:
+    - [x] pg_trgm の有効化（マイグレーション `enable_extension`）
+    - [x] `Exercise.candidates_for(user:, name:)`: 前方一致 → 部分一致 → 類似度（0.25 以上）の順で最大 4 件。同順位内は名前の短い順 → 独自種目優先 → id 順
+  - 実施結果（2026-10-22・ブランチ `feat/f03-candidate-search`）: `db/migrate/20261022090000_enable_pg_trgm.rb`（`enable_extension "pg_trgm"`。index なし・10.1 の決定どおり）、`Exercise.candidates_for(user:, name:)`（`MAX_CANDIDATES = 4`・`SIMILARITY_THRESHOLD = 0.25`）
+    - SQL 1 本: `available_for(user)` を `normalized_name LIKE '%q%' OR similarity(normalized_name, q) >= 0.25` で絞り、`CASE`（前方一致 0 / 部分一致 1 / 類似度のみ 2）→ 同順位内の並び → `user_id IS NULL`（独自種目が先）→ `id` で ORDER BY、LIMIT 4。部分一致が前方一致を兼ねる行は CASE で 1 行に収まるため重複しない
+    - **同順位内の並び（決め値・10.1 の申し送り）**: 前方・部分一致は**名前の短い順**（`プレス` の 7 件から ベンチプレス・レッグプレス・ダンベルプレス・チェストプレス）、類似度のみは**スコアの高い順**。同じ長さ・同スコアは独自種目 → id 順（プリセットは seed＝仕様書 4.3.2 の順）。名前順を使わないのは DB の照合順序（en_US.utf8）でカタカナの並びが保証されないため
+    - 安全策: LIKE の `%` `_` は `sanitize_sql_like` でエスケープ（`%` を送っても全件一致しない）。値はすべて `sanitize_sql_array` のバインドで渡し、`Arel.sql` は組み立て済みの断片にだけ使う。閾値は `pg_trgm.similarity_threshold`（セッション設定）ではなく SQL に明示
+    - TDD: `spec/models/exercise_spec.rb` に 10 examples（前方一致優先 / 入力の正規化 / 同順位内の並び `レッグ` 4 件 / 上限 4 件 `プレス` / 類似度のみ `デットリフト`・`ベンチプレスス`・`腕立てふせ` / 4 件未満のときの補完 / 候補なし `ランジ` / 独自種目を同順位で先・他ユーザーは除外 / `%` `_` の扱い / 空白のみ）。プリセット 22 件を仕様書の順で作り id 順＝seed 順を再現 → RED（NoMethodError）→ GREEN（初回で通過）。REFACTOR: 判定なし
+    - 品質・セキュリティ: RSpec 全件 379 examples 0 failures・RuboCop 指摘なし・**Brakeman 警告 0**（SQL 断片の組み立てを含むため実行。6.1 の教訓）。schema.rb の差分は `enable_extension "pg_trgm"` と version のみ（コミット前に確認）
+    - 手元の環境メモ: このセッションのシェルで rbenv の PATH が外れ、`bundle` が macOS 同梱の Ruby 2.6 を指して失敗した。`export PATH="$HOME/.rbenv/shims:$PATH"` で回避。CI には影響なし
 - [ ] 10.5 保留エントリの作成と候補提示応答の実装
   - 実施内容: 未知種目を含む入力は全行を保留（既存保留は物理削除→新規作成を同一トランザクションで。UPDATE 不可）し、Quick Reply（候補最大 4 件＋新規種目として登録＋キャンセル）を返信する。postback データに保留 id を含める（data にユーザー入力は含めない。label は 20 文字超を 19 文字＋「…」に書記素単位で切り詰め。新規登録ボタンは固定文言。10.2）。unique 制約違反はリトライまたは 500（仕様書 4.3.1(3)）
   - テスト種別: request spec（保留の置き換え・並行時の一意性を含む）

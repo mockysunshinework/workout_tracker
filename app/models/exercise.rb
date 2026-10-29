@@ -31,6 +31,34 @@ class Exercise < ApplicationRecord
       preset.find_by(normalized_name: normalized_name)
   end
 
+  # 候補検索の上限と類似度の閾値（SPEC 4.3.1(2)・10.1 の決め値。閾値は 10.4 のテストケースで調整する）
+  MAX_CANDIDATES = 4
+  SIMILARITY_THRESHOLD = 0.25
+
+  # LINE 入力の種目照合 手順 2（SPEC 4.3.1(2)）: 完全一致しなかった入力に対する候補。
+  # 利用できる種目（独自＋プリセット）を、前方一致 → 部分一致 → pg_trgm の類似度（閾値以上）の順に
+  # 最大 MAX_CANDIDATES 件返す。同順位内は名前の短い順 → 独自種目 → id 順（プリセットは seed の順）。
+  # 類似度は 1 文字の誤字（`デットリフト`）を拾うためのもので、略称は前方・部分一致で拾える（10.1 の実測）。
+  # LIKE の % と _ はエスケープして文字として扱う。閾値はセッション設定ではなく SQL に明示する
+  def self.candidates_for(user:, name:)
+    query = ExerciseNameNormalizer.call(name)
+    return [] if query.blank?
+
+    like_pattern = "%#{sanitize_sql_like(query)}%"
+    prefix_pattern = "#{sanitize_sql_like(query)}%"
+    rank = sanitize_sql_array([
+      "CASE WHEN normalized_name LIKE ? THEN 0 WHEN normalized_name LIKE ? THEN 1 ELSE 2 END",
+      prefix_pattern, like_pattern
+    ])
+    similarity = sanitize_sql_array([ "similarity(normalized_name, ?)", query ])
+
+    available_for(user)
+      .where("normalized_name LIKE ? OR #{similarity} >= ?", like_pattern, SIMILARITY_THRESHOLD)
+      .order(Arel.sql("#{rank} ASC, CASE WHEN #{rank} = 2 THEN -#{similarity} ELSE length(normalized_name) END ASC, user_id IS NULL ASC, id ASC"))
+      .limit(MAX_CANDIDATES)
+      .to_a
+  end
+
   private
 
   # 表示名は入力された表記のまま保持し、照合用の名前だけを正規化する（SPEC 4.5）

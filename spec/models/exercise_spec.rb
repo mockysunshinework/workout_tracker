@@ -176,6 +176,69 @@ RSpec.describe Exercise, type: :model do
     end
   end
 
+  # 10.4 候補検索（SPEC 4.3.1(2) 手順 2）: 完全一致しなかった入力に対し、前方一致 → 部分一致 → 類似度の順で
+  # 最大 4 件。閾値 0.25 は 10.1 の決め値。同順位内は名前の短い順 → 独自種目優先 → id 順（プリセットは seed 順）
+  describe ".candidates_for（候補検索）" do
+    let(:user) { create(:user) }
+    # 仕様書 4.3.2 の順で作る（id 順 = seed 順になる）
+    let!(:presets) do
+      %w[ベンチプレス インクラインベンチプレス ダンベルプレス チェストプレス 腕立て伏せ デッドリフト ラットプルダウン
+         シーテッドロー 懸垂 スクワット ブルガリアンスクワット レッグプレス レッグエクステンション レッグカール
+         ショルダープレス サイドレイズ リアレイズ アームカール トライセプスプレスダウン ディップス クランチ レッグレイズ]
+        .map { |name| create(:exercise, :preset, name: name) }
+    end
+
+    def names_for(input)
+      described_class.candidates_for(user: user, name: input).map(&:name)
+    end
+
+    it "前方一致を部分一致より先に返す（`ベンチ` → ベンチプレス、インクラインベンチプレス）" do
+      expect(names_for("ベンチ")).to eq %w[ベンチプレス インクラインベンチプレス]
+    end
+
+    it "入力は正規化してから照合する（ひらがな・全角空白）" do
+      expect(names_for("　べんち　")).to eq %w[ベンチプレス インクラインベンチプレス]
+    end
+
+    it "同順位内は名前の短い順、同じ長さは id 順（`レッグ` の前方一致 4 件）" do
+      expect(names_for("レッグ")).to eq %w[レッグプレス レッグカール レッグレイズ レッグエクステンション]
+    end
+
+    it "最大 4 件に絞る（`プレス` は部分一致 7 件）" do
+      expect(names_for("プレス")).to eq %w[ベンチプレス レッグプレス ダンベルプレス チェストプレス]
+    end
+
+    it "前方一致・部分一致が無ければ類似度 0.25 以上を高い順に返す（1 文字の誤字）" do
+      expect(names_for("デットリフト")).to eq %w[デッドリフト]
+      expect(names_for("ベンチプレスス")).to eq %w[ベンチプレス]
+      expect(names_for("腕立てふせ")).to eq %w[腕立て伏せ]
+    end
+
+    it "前方一致・部分一致が 4 件に満たないときだけ類似度で補う（`レッグカル` は類似度のみ）" do
+      expect(names_for("レッグカル").first).to eq "レッグカール"
+    end
+
+    it "どれにも当たらなければ空（`ランジ`）" do
+      expect(names_for("ランジ")).to eq []
+    end
+
+    it "自分の独自種目は含み、同順位ではプリセットより先に返す。他ユーザーの種目は含まない" do
+      mine = create(:exercise, user: user, name: "ベンチフライ")
+      create(:exercise, user: create(:user), name: "ベンチディップ")
+
+      expect(names_for("ベンチ")).to eq [ mine.name, "ベンチプレス", "インクラインベンチプレス" ]
+    end
+
+    it "LIKE のワイルドカード文字はそのまま文字として扱う" do
+      expect(names_for("%")).to eq []
+      expect(names_for("_")).to eq []
+    end
+
+    it "空白のみの入力は空" do
+      expect(names_for("　 ")).to eq []
+    end
+  end
+
   describe "別名の連鎖削除（SPEC 4.5）" do
     it "別名付きの種目（記録なし）を destroy すると別名も消える" do
       exercise = create(:exercise)
