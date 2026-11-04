@@ -234,6 +234,14 @@ RSpec.describe Exercise, type: :model do
       expect(names_for("_")).to eq []
     end
 
+    # PR #83 レビュー指摘: 埋め込み済みの SQL 断片に `?` が含まれると、where のプレースホルダ数と
+    # バインド数が食い違って PreparedStatementInvalid になっていた（全角 `？` も NFKC で `?` になる）
+    it "入力に `?` や `？` が含まれても例外にならず、通常どおり候補を返す" do
+      expect { names_for("ベンチ?") }.not_to raise_error
+      expect(names_for("ベンチ？")).to eq names_for("ベンチ?")
+      expect(names_for("ベンチ?")).to include("ベンチプレス")
+    end
+
     it "空白のみの入力は空" do
       expect(names_for("　 ")).to eq []
     end

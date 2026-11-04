@@ -39,24 +39,40 @@ class Exercise < ApplicationRecord
   # 利用できる種目（独自＋プリセット）を、前方一致 → 部分一致 → pg_trgm の類似度（閾値以上）の順に
   # 最大 MAX_CANDIDATES 件返す。同順位内は名前の短い順 → 独自種目 → id 順（プリセットは seed の順）。
   # 類似度は 1 文字の誤字（`デットリフト`）を拾うためのもので、略称は前方・部分一致で拾える（10.1 の実測）。
-  # LIKE の % と _ はエスケープして文字として扱う。閾値はセッション設定ではなく SQL に明示する
+  # LIKE の % と _ はエスケープして文字として扱う。閾値はセッション設定ではなく SQL に明示する。
+  # ユーザー入力は where / order とも 1 回の sanitize_sql_array でまとめてバインドする。値を埋め込み済みの
+  # 断片を別のプレースホルダ付きテンプレートに混ぜると、入力中の `?`（全角 `？` も NFKC で `?` になる）が
+  # プレースホルダと数えられてバインド数の不一致になる（PR #83 レビュー指摘）
   def self.candidates_for(user:, name:)
     query = ExerciseNameNormalizer.call(name)
     return [] if query.blank?
 
     like_pattern = "%#{sanitize_sql_like(query)}%"
     prefix_pattern = "#{sanitize_sql_like(query)}%"
-    rank = sanitize_sql_array([
-      "CASE WHEN normalized_name LIKE ? THEN 0 WHEN normalized_name LIKE ? THEN 1 ELSE 2 END",
-      prefix_pattern, like_pattern
+    condition = sanitize_sql_array([
+      "normalized_name LIKE ? OR similarity(normalized_name, ?) >= ?",
+      like_pattern, query, SIMILARITY_THRESHOLD
     ])
-    similarity = sanitize_sql_array([ "similarity(normalized_name, ?)", query ])
+    # 並び順（プレースホルダは出現順に prefix_pattern, like_pattern, like_pattern, query）:
+    #   1. 前方一致 0 / 部分一致 1 / 類似度のみ 2
+    #   2. 一致なら名前の短い順、類似度のみならスコアの高い順
+    #   3. 独自種目をプリセットより先に
+    #   4. id 順（プリセットは seed の順）
+    ordering = sanitize_sql_array([ <<~SQL.squish, prefix_pattern, like_pattern, like_pattern, query ])
+      CASE
+        WHEN normalized_name LIKE ? THEN 0
+        WHEN normalized_name LIKE ? THEN 1
+        ELSE 2
+      END ASC,
+      CASE
+        WHEN normalized_name LIKE ? THEN length(normalized_name)
+        ELSE -similarity(normalized_name, ?)
+      END ASC,
+      user_id IS NULL ASC,
+      id ASC
+    SQL
 
-    available_for(user)
-      .where("normalized_name LIKE ? OR #{similarity} >= ?", like_pattern, SIMILARITY_THRESHOLD)
-      .order(Arel.sql("#{rank} ASC, CASE WHEN #{rank} = 2 THEN -#{similarity} ELSE length(normalized_name) END ASC, user_id IS NULL ASC, id ASC"))
-      .limit(MAX_CANDIDATES)
-      .to_a
+    available_for(user).where(condition).order(Arel.sql(ordering)).limit(MAX_CANDIDATES).to_a
   end
 
   private
