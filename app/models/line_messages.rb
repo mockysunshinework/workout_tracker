@@ -74,52 +74,6 @@ module LineMessages
     TEXT
   end
 
-  # Quick Reply のボタン 1 つ分（label: 表示文字・display_text: 押したときの発言・data: postback）。
-  # SDK の型への変換は LineBot.reply が行う
-  Button = Data.define(:label, :display_text, :data)
-
-  # LINE の上限（SPEC 4.3.1(2)「Quick Reply / postback の上限」・書記素クラスタ単位）
-  BUTTON_LABEL_MAX = 20
-  DISPLAY_TEXT_MAX = 300
-
-  # 未知の種目に対する候補提示の案内文（SPEC 4.3.1(2) 手順 3・4）。入力名はここに出し、ボタンには入れない
-  def candidate_prompt(pending:, candidates:)
-    name = pending.current_unknown["exercise_name"]
-    question = candidates.any? ? "どれを記録しますか？" : "新規種目として登録しますか？"
-    "「#{name}」に一致する種目がありません。#{question}"
-  end
-
-  # 候補（最大 4）→ 新規種目として登録（固定文言）→ キャンセル。data は識別子のみ（LinePostback）
-  def candidate_buttons(pending:, candidates:)
-    name = pending.current_unknown["exercise_name"]
-    candidate_buttons = candidates.map do |exercise|
-      Button.new(label: truncate_label(exercise.name), display_text: truncate_display_text(exercise.name),
-                 data: LinePostback.encode(action: :choose, pending_id: pending.id, exercise_id: exercise.id))
-    end
-    candidate_buttons + [
-      Button.new(label: "新規種目として登録", display_text: truncate_display_text("#{name}を新規種目として登録"),
-                 data: LinePostback.encode(action: :create, pending_id: pending.id)),
-      Button.new(label: "キャンセル", display_text: "キャンセル",
-                 data: LinePostback.encode(action: :cancel, pending_id: pending.id))
-    ]
-  end
-
-  # 20 文字を超える label は 19 文字＋「…」（書記素クラスタ単位。String#length ではない）
-  def truncate_label(text)
-    truncate_graphemes(text, BUTTON_LABEL_MAX)
-  end
-
-  def truncate_display_text(text)
-    truncate_graphemes(text, DISPLAY_TEXT_MAX)
-  end
-
-  def truncate_graphemes(text, max)
-    clusters = text.grapheme_clusters
-    return text if clusters.size <= max
-
-    clusters.first(max - 1).join + "…"
-  end
-
   # 自重（nil）は「自重」、それ以外は末尾の .0 を落として kg を付ける（60 → 60kg、62.5 → 62.5kg）
   def format_weight(weight_kg)
     return "自重" if weight_kg.nil?
