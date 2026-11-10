@@ -9,10 +9,11 @@ module RecordMessageHandler
   #   :unrecognized      記録の形（`重量/回数`）を含む行が 1 つもない「その他テキスト」（SPEC 4.2.1 → ヘルプ案内）。
   #                      旧記法 `ベンチ 60 5 3` もここ（推測補正せず形式の案内のみ・9.1）
   #   :parse_failed      parse_result（記録の形の行があって失敗。失敗行と理由を返信する・9.5）
-  #   :unknown_exercises unknown_names（照合できなかった種目名。候補提案は 10 章）
+  #   :unknown_exercises unknown_names（照合できなかった種目名）、pending（全行を保留した PendingWorkoutEntry）、
+  #                      candidates（先頭の未知種目に対する候補。Quick Reply で提示する・SPEC 4.3.1(2)(3)）
   #   :invalid           invalid_messages（モデル検証のエラー。例: 重量が必要な種目に自重で入力）
-  Outcome = Data.define(:status, :saved, :parse_result, :unknown_names, :invalid_messages) do
-    def initialize(status:, saved: nil, parse_result: nil, unknown_names: [], invalid_messages: [])
+  Outcome = Data.define(:status, :saved, :parse_result, :unknown_names, :pending, :candidates, :invalid_messages) do
+    def initialize(status:, saved: nil, parse_result: nil, unknown_names: [], pending: nil, candidates: [], invalid_messages: [])
       super
     end
   end
@@ -33,7 +34,12 @@ module RecordMessageHandler
 
     resolved = parse_result.entries.map { |entry| [ Exercise.find_exact_match(user: user, name: entry.exercise_name), entry ] }
     unknown_names = resolved.filter_map { |exercise, entry| entry.exercise_name if exercise.nil? }.uniq
-    return Outcome.new(status: :unknown_exercises, unknown_names: unknown_names) if unknown_names.any?
+    if unknown_names.any?
+      # 未知の種目が 1 つでもあれば全行を保留し（部分保存しない）、先頭の未知種目から候補確認する（SPEC 4.3.1(3)）
+      pending = PendingWorkoutEntry.replace_for!(user, source_text: text, parsed_lines: pending_lines(resolved))
+      candidates = Exercise.candidates_for(user: user, name: unknown_names.first)
+      return Outcome.new(status: :unknown_exercises, unknown_names: unknown_names, pending: pending, candidates: candidates)
+    end
 
     Outcome.new(status: :saved, saved: save(user, performed_on, resolved))
   rescue ActiveRecord::RecordInvalid => e
@@ -65,11 +71,23 @@ module RecordMessageHandler
     end
   end
 
+  # 保留に保持する行の形（PendingWorkoutEntry の parsed_lines）。解決済みの行は exercise_id を持ち、未知は nil
+  def pending_lines(resolved)
+    resolved.map do |exercise, entry|
+      {
+        "line_number" => entry.line_number,
+        "exercise_name" => entry.exercise_name,
+        "exercise_id" => exercise&.id,
+        "groups" => entry.groups.map { |g| { "weight_kg" => g.weight_kg&.to_s("F"), "reps" => g.reps, "sets" => g.sets } }
+      }
+    end
+  end
+
   # 記録として書こうとしたテキストか（`/` を含む行が 1 つでもあれば記録の形とみなす）。
   # 「こんにちは」のような雑談と、`ベンチプレス60/` のような書き損じを返信文で区別するため
   def record_like?(text)
     text.to_s.unicode_normalize(:nfkc).include?("/")
   end
 
-  private_class_method :save, :record_like?
+  private_class_method :save, :pending_lines, :record_like?
 end
