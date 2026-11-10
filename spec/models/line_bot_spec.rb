@@ -46,6 +46,37 @@ RSpec.describe LineBot do
       end
     end
 
+    # 10.5 Quick Reply（SPEC 4.3.1(2)）: buttons を渡すとテキストに quickReply として付く
+    it "buttons を渡すと、各ボタンが postback アクションの Quick Reply としてメッセージに付く" do
+      allow(client).to receive(:reply_message_with_http_info).and_return([ nil, 200, {} ])
+      buttons = [
+        LineMessages::Button.new(label: "ベンチプレス", display_text: "ベンチプレス", data: "action=choose&pending_id=1&exercise_id=2"),
+        LineMessages::Button.new(label: "キャンセル", display_text: "キャンセル", data: "action=cancel&pending_id=1")
+      ]
+
+      expect(LineBot.reply("token-1", "どれを記録しますか？", buttons: buttons)).to be true
+
+      expect(client).to have_received(:reply_message_with_http_info) do |reply_message_request:|
+        message = reply_message_request.messages.first
+        items = message.quick_reply.items
+        expect(items.size).to eq 2
+        expect(items.map { |i| i.action.label }).to eq [ "ベンチプレス", "キャンセル" ]
+        expect(items.map { |i| i.action.data }).to eq [ "action=choose&pending_id=1&exercise_id=2", "action=cancel&pending_id=1" ]
+        expect(items.map { |i| i.action.display_text }).to eq [ "ベンチプレス", "キャンセル" ]
+        expect(items.map(&:action)).to all(be_a(Line::Bot::V2::MessagingApi::PostbackAction))
+      end
+    end
+
+    it "buttons を渡さなければ quickReply は付かない" do
+      allow(client).to receive(:reply_message_with_http_info).and_return([ nil, 200, {} ])
+
+      LineBot.reply("token-1", "こんにちは")
+
+      expect(client).to have_received(:reply_message_with_http_info) do |reply_message_request:|
+        expect(reply_message_request.messages.first.quick_reply).to be_nil
+      end
+    end
+
     it "200 以外（期限切れ token の 400 等）なら false を返し、警告ログを残す（リトライしない）" do
       allow(client).to receive(:reply_message_with_http_info).and_return([ nil, 400, {} ])
       allow(Rails.logger).to receive(:warn)

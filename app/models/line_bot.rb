@@ -40,11 +40,13 @@ module LineBot
   end
 
   # Reply API でテキスト 1 件を返信する（SPEC 2.3）。DB コミット後に呼ぶこと。
-  # 失敗してもリトライ・ロールバックせずログに留め、false を返す（返信の成否を記録の保存に波及させない）
-  def reply(reply_token, text)
+  # 失敗してもリトライ・ロールバックせずログに留め、false を返す（返信の成否を記録の保存に波及させない）。
+  # buttons（LineMessages::Button の配列）を渡すと postback アクションの Quick Reply として付ける
+  # （SPEC 4.3.1(2)。最大 13 個・label 20 文字・data 300 文字は呼び出し側＝LineMessages が守る）
+  def reply(reply_token, text, buttons: [])
     request = Line::Bot::V2::MessagingApi::ReplyMessageRequest.new(
       reply_token: reply_token,
-      messages: [ Line::Bot::V2::MessagingApi::TextMessage.new(text: text) ]
+      messages: [ Line::Bot::V2::MessagingApi::TextMessage.new(text: text, quick_reply: quick_reply_for(buttons)) ]
     )
     _body, status, = client.reply_message_with_http_info(reply_message_request: request)
     return true if status == 200
@@ -54,5 +56,18 @@ module LineBot
   rescue StandardError => e
     Rails.logger.warn("LINE Reply failed: #{e.class}")
     false
+  end
+
+  def quick_reply_for(buttons)
+    return nil if buttons.blank?
+
+    items = buttons.map do |button|
+      Line::Bot::V2::MessagingApi::QuickReplyItem.new(
+        action: Line::Bot::V2::MessagingApi::PostbackAction.new(
+          label: button.label, data: button.data, display_text: button.display_text
+        )
+      )
+    end
+    Line::Bot::V2::MessagingApi::QuickReply.new(items: items)
   end
 end
