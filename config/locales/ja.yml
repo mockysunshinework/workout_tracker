@@ -8,6 +8,7 @@ ja:
       workout: トレーニング記録
       workout_set: セット
       exercise_alias: 種目の別名
+      pending_workout_entry: 確認待ちの記録
     attributes:
       user:
         name: 名前
@@ -30,3 +31,7 @@ ja:
         normalized_alias: 正規化済み別名
         exercise: 種目
         confirmed: 確認済み
+      pending_workout_entry:
+        source_text: 受信メッセージ
+        parsed_lines: 解析結果
+        expires_at: 有効期限

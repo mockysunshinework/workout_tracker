@@ -46,8 +46,9 @@ class LineWebhooksController < ApplicationController
   end
 
   # SPEC 4.2.1 message（テキスト）: 記録フォーマットなら保存してエコーバック（9.4）、
-  # 失敗や記録の形でないテキストは案内を返信（9.5）。記録日は受信日（JST。Date.current はアプリの
-  # タイムゾーン = Tokyo）。テキスト以外のメッセージは冪等 ID だけ記録して受領する
+  # 失敗や記録の形でないテキストは案内を返信（9.5）、未知の種目を含むなら全行を保留して候補を
+  # Quick Reply で提示（10.5）。記録日は受信日（JST。Date.current はアプリのタイムゾーン = Tokyo）。
+  # テキスト以外のメッセージは冪等 ID だけ記録して受領する
   def handle_message(event)
     # テキストメッセージでない場合には、このイベントは処理済みと記録して終了
     return ProcessedLineEvent.record_once(event.webhook_event_id) unless event.message.is_a?(Line::Bot::V2::Webhook::TextMessageContent)
@@ -66,17 +67,20 @@ class LineWebhooksController < ApplicationController
     end
     return unless outcome
 
-    text = reply_text_for(outcome)
-    LineBot.reply(event.reply_token, text) if text
+    text, buttons = reply_for(outcome)
+    LineBot.reply(event.reply_token, text, buttons: buttons) if text
   end
 
-  # Outcome → 返信文。nil は「返信しない」（未知の種目: 候補提案の返信は 10 章で実装する）
-  def reply_text_for(outcome)
+  # Outcome → [返信文, Quick Reply のボタン]。未知の種目は候補提示（SPEC 4.3.1(2)。確定処理は 10.6 の postback）
+  def reply_for(outcome)
     case outcome.status
-    when :saved then LineMessages.recorded(outcome.saved)
-    when :parse_failed then LineMessages.parse_failed(outcome.parse_result)
-    when :unrecognized then LineMessages.unrecognized
-    when :invalid then LineMessages.invalid(outcome.invalid_messages)
+    when :saved then [ LineMessages.recorded(outcome.saved), [] ]
+    when :parse_failed then [ LineMessages.parse_failed(outcome.parse_result), [] ]
+    when :unrecognized then [ LineMessages.unrecognized, [] ]
+    when :invalid then [ LineMessages.invalid(outcome.invalid_messages), [] ]
+    when :unknown_exercises
+      [ LineMessages.candidate_prompt(pending: outcome.pending, candidates: outcome.candidates),
+        LineMessages.candidate_buttons(pending: outcome.pending, candidates: outcome.candidates) ]
     end
   end
 

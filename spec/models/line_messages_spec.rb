@@ -93,6 +93,52 @@ RSpec.describe LineMessages do
     end
   end
 
+  # 10.5 候補提示（SPEC 4.3.1(2) 手順 3・4、ボタン構成は 10.2 の決定）
+  describe ".candidate_prompt / .candidate_buttons" do
+    let(:user) { create(:user) }
+    let(:pending) { create(:pending_workout_entry, user: user) } # 1 行目の未知種目は「ベンチ」
+    let(:candidates) { [ create(:exercise, :preset, name: "ベンチプレス"), create(:exercise, :preset, name: "インクラインベンチプレス") ] }
+
+    it "候補があるときの案内文は入力名と選択を促す文" do
+      expect(described_class.candidate_prompt(pending: pending, candidates: candidates))
+        .to eq "「ベンチ」に一致する種目がありません。どれを記録しますか？"
+    end
+
+    it "候補がないときの案内文は新規登録かキャンセルを促す文" do
+      expect(described_class.candidate_prompt(pending: pending, candidates: []))
+        .to eq "「ベンチ」に一致する種目がありません。新規種目として登録しますか？"
+    end
+
+    it "ボタンは候補 → 新規種目として登録（固定文言） → キャンセル の順で、data には id だけを入れる" do
+      buttons = described_class.candidate_buttons(pending: pending, candidates: candidates)
+
+      expect(buttons.map(&:label)).to eq [ "ベンチプレス", "インクラインベンチプレス", "新規種目として登録", "キャンセル" ]
+      expect(buttons.map(&:display_text)).to eq [ "ベンチプレス", "インクラインベンチプレス", "ベンチを新規種目として登録", "キャンセル" ]
+      expect(buttons.map(&:data)).to eq [
+        "action=choose&pending_id=#{pending.id}&exercise_id=#{candidates[0].id}",
+        "action=choose&pending_id=#{pending.id}&exercise_id=#{candidates[1].id}",
+        "action=create&pending_id=#{pending.id}",
+        "action=cancel&pending_id=#{pending.id}"
+      ]
+    end
+
+    it "候補がなければ新規登録とキャンセルの 2 つだけ" do
+      expect(described_class.candidate_buttons(pending: pending, candidates: []).map(&:label)).to eq [ "新規種目として登録", "キャンセル" ]
+    end
+
+    it "label が 20 文字を超える種目名は 19 文字＋「…」に書記素単位で切り詰め、displayText は切り詰めない" do
+      long = create(:exercise, user: user, name: "ア" * 21)
+      exact = create(:exercise, user: user, name: "イ" * 20)
+
+      buttons = described_class.candidate_buttons(pending: pending, candidates: [ long, exact ])
+
+      expect(buttons[0].label).to eq "#{"ア" * 19}…"
+      expect(buttons[0].label.grapheme_clusters.size).to eq 20
+      expect(buttons[0].display_text).to eq "ア" * 21
+      expect(buttons[1].label).to eq "イ" * 20
+    end
+  end
+
   it "welcome / welcome_back は input_guide を含む" do
     expect(described_class.welcome).to include(described_class.input_guide)
     expect(described_class.welcome_back).to include(described_class.input_guide)

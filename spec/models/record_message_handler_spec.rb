@@ -109,6 +109,44 @@ RSpec.describe RecordMessageHandler, type: :model do
       expect(Workout.count).to eq 0
     end
 
+    # 10.5: 未知種目を含む入力は全行を保留し、先頭の未知種目の候補を返す（SPEC 4.3.1(2)(3)）
+    it "未知の種目を含む場合は全行を保留し、既知の行には種目 id を、未知の行には nil を入れる" do
+      text = "ベンチプレス60/5/2 65/5\nベンチ70/3\n懸垂/10"
+      outcome = handle(text)
+
+      pending = outcome.pending
+      expect(pending).to eq PendingWorkoutEntry.sole
+      expect(pending.user).to eq user
+      expect(pending.source_text).to eq text
+      expect(pending.parsed_lines).to eq [
+        { "line_number" => 1, "exercise_name" => "ベンチプレス", "exercise_id" => bench.id,
+          "groups" => [ { "weight_kg" => "60.0", "reps" => 5, "sets" => 2 }, { "weight_kg" => "65.0", "reps" => 5, "sets" => 1 } ] },
+        { "line_number" => 2, "exercise_name" => "ベンチ", "exercise_id" => nil,
+          "groups" => [ { "weight_kg" => "70.0", "reps" => 3, "sets" => 1 } ] },
+        { "line_number" => 3, "exercise_name" => "懸垂", "exercise_id" => chinup.id,
+          "groups" => [ { "weight_kg" => nil, "reps" => 10, "sets" => 1 } ] }
+      ]
+    end
+
+    it "先頭の未知種目の候補（Exercise.candidates_for）を返す" do
+      create(:exercise, :preset, name: "インクラインベンチプレス")
+
+      outcome = handle("ベンチ60/5\nDL100/5")
+
+      expect(outcome.candidates.map(&:name)).to eq %w[ベンチプレス インクラインベンチプレス]
+      expect(outcome.pending.current_unknown["exercise_name"]).to eq "ベンチ"
+    end
+
+    it "既存の保留があれば置き換える（後勝ち・id 再採番）" do
+      old = handle("ベンチ60/5").pending
+
+      replaced = handle("スクワ80/5").pending
+
+      expect(PendingWorkoutEntry.where(user: user).count).to eq 1
+      expect(replaced.id).not_to eq old.id
+      expect(replaced.source_text).to eq "スクワ80/5"
+    end
+
     it "重量が必要な種目に自重で入力した場合は :invalid を返し、当日 workout も含めて何も残さない" do
       outcome = handle("懸垂/10\nベンチプレス/10/3")
 

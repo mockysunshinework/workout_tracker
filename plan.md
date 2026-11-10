@@ -611,10 +611,27 @@
     - 手元の環境メモ: このセッションのシェルで rbenv の PATH が外れ、`bundle` が macOS 同梱の Ruby 2.6 を指して失敗した。`export PATH="$HOME/.rbenv/shims:$PATH"` で回避。CI には影響なし
   - レビュー指摘に対応（2026-10-29・PR #83 の @claude 自動レビュー・インライン 1 件）: 「入力に `?` が含まれると `PreparedStatementInvalid`」→ **正当・修正**。値を埋め込み済みの `similarity(normalized_name, 'ベンチ?')` を、別のプレースホルダ付き `where` テンプレートに展開していたため、入力中の `?` がプレースホルダと数えられバインド数が不一致になる（全角 `？` も NFKC で `?` になるため LINE の自由入力で普通に起きる）。RED: `candidates_for(name: "ベンチ?")` で `wrong number of bind variables (2 for 3)` を再現。修正: where と order をそれぞれ**1 回の `sanitize_sql_array` でまとめてバインド**し、埋め込み済み断片をテンプレートに混ぜない構造に変更（`Arel.sql` にはバインド済みの文字列だけを渡す）。spec +1（`?` と `？` で例外にならず同じ結果・ベンチプレスを含む）。教訓: `sanitize_sql_array` は値を埋め込んだ結果の文字列中の `?` を区別できないので、**バインドは 1 段で終わらせる**。RSpec 全件 380 examples 0 failures・RuboCop 指摘なし・Brakeman 警告 0
   - CI の scan_ruby 失敗（2026-10-29）は本 PR と無関係: bundler-audit が間接依存の net-ssh 7.3.3（kamal 経由・7 件、High 2 件）と crass 1.0.7（rails-html-sanitizer 経由・medium）の新しい勧告を検出したもの。いずれもパッチ更新（net-ssh 7.3.8 / crass 1.0.8）で解消することを main の一時作業ツリーで確認（bundle check 整合・audit クリーン・369 examples green）。別 PR で更新してから本ブランチを Update branch する
-- [ ] 10.5 保留エントリの作成と候補提示応答の実装
+- [x] 10.5 保留エントリの作成と候補提示応答の実装
   - 実施内容: 未知種目を含む入力は全行を保留（既存保留は物理削除→新規作成を同一トランザクションで。UPDATE 不可）し、Quick Reply（候補最大 4 件＋新規種目として登録＋キャンセル）を返信する。postback データに保留 id を含める（data にユーザー入力は含めない。label は 20 文字超を 19 文字＋「…」に書記素単位で切り詰め。新規登録ボタンは固定文言。10.2）。unique 制約違反はリトライまたは 500（仕様書 4.3.1(3)）
   - テスト種別: request spec（保留の置き換え・並行時の一意性を含む）
   - 完了条件: 保留作成と Quick Reply 応答、後勝ちの置き換えの spec が通る
+  - 作業分解（tdd-dev 実行管理用）:
+    - [x] `PendingWorkoutEntry` モデル（parsed_lines の構造・30 分期限・削除＋新規作成の置き換え・現在の未知種目）
+    - [x] `RecordMessageHandler`: 未知種目で保留を作り、先頭の未知種目の候補を Outcome で返す
+    - [x] `LinePostback`（data の組み立て）と `LineMessages` の候補提示文・ボタン（label 切り詰め・固定文言）
+    - [x] `LineBot.reply` の Quick Reply 対応と Webhook の統合（request spec・後勝ちの置き換え・並行時は 500）
+  - 実施結果（2026-11-08・ブランチ `feat/f03-pending-candidates`）:
+    - `PendingWorkoutEntry`（`app/models`・factory あり）: `EXPIRES_IN = 30.minutes`、`replace_for!(user, source_text:, parsed_lines:)`（同一トランザクションで `delete_all` → `create!`。id 再採番で stale postback を無効化）、`current_unknown`（`exercise_id` が nil の先頭行）、`expired?`。**parsed_lines の構造（確定）**: 行ごとに `{ "line_number", "exercise_name", "exercise_id"（解決済みなら id・未知なら nil）, "groups": [{ "weight_kg"（小数 1 桁の文字列・自重は nil）, "reps", "sets" }] }`。10.6 の postback で `exercise_id` を埋め、全行埋まったら 9.4 の保存に合流（10.7）
+    - **並行受信の unique 制約違反は「500 → 再送」を採用**（仕様書 4.3.1(3) の「リトライまたは 500」のうち後者）。`replace_for!` は `RecordNotUnique` をそのまま伝播させる。リトライ方式は PG の中断トランザクション回復が複雑（4.4 と同じ理由）で、再送による回復の仕組みが既にあるため
+    - **既存バグの修正 `ProcessedLineEvent.record_once`**: メソッド全体で `RecordNotUnique` を rescue していたため、ブロック（業務処理）側の一意制約違反まで「イベント重複」と取り違えて 200 で握りつぶしていた（request spec の 500 期待が 200 になって判明）。ID の INSERT だけを savepoint（`transaction(requires_new: true)`）で囲む `register` に分離し、ブロックの例外は種類を問わず伝播させる。model spec +1（ブロック内の RecordNotUnique が伝播し登録も巻き戻る）。7.5b までは業務処理側に unique 制約を持つテーブルが無かったため顕在化していなかった
+    - `RecordMessageHandler`: `:unknown_exercises` で全行を `replace_for!` に保留し、先頭の未知種目の `Exercise.candidates_for` を `Outcome#candidates` に、保留を `Outcome#pending` に載せる。保留は `record_once` のトランザクション内で作られる
+    - `LinePostback.encode(action:, **ids)`: `ACTIONS = choose / create / cancel / alias_confirm / alias_decline`、クエリ文字列（`Rack::Utils.build_query`）。ユーザー入力は含めない（10.2）。decode は 10.6
+    - `LineMessages`: `Button = Data(label, display_text, data)`、`candidate_prompt(pending:, candidates:)`（`「ベンチ」に一致する種目がありません。どれを記録しますか？` / 候補なしは `新規種目として登録しますか？`）、`candidate_buttons`（候補 → 固定文言「新規種目として登録」→ キャンセル。label は 20 文字超を 19 文字＋「…」に `grapheme_clusters` で切り詰め、displayText は 300 文字で同様）
+    - `LineBot.reply(reply_token, text, buttons: [])`: `Button` 配列を SDK の `QuickReply` / `QuickReplyItem` / `PostbackAction` に変換してテキストに付ける（buttons 空なら従来どおり quick_reply なし）
+    - コントローラ: `reply_text_for` → `reply_for`（`[文, ボタン]` を返す）。`:unknown_exercises` で候補提示文＋ Quick Reply を返信。返信は従来どおりコミット後
+    - TDD: `pending_workout_entry_spec`（9）・`record_message_handler_spec` +3（保留の構造 / 候補 / 置き換え）・`line_postback_spec`（3）・`line_messages_spec` +5（案内文 2 / ボタン構成 / 候補なし / label 切り詰め）・`line_bot_spec` +2（Quick Reply あり / なし）・`spec/requests/line_unknown_exercise_spec.rb`（5: 保留＋Quick Reply の内容 / 候補なし / 後勝ちの置き換えと id 再採番 / 再送で作り直さない / 並行時の RecordNotUnique で 500 かつ冪等 ID 未登録）→ RED（未定義の定数・メソッド、request は返信・保留なし）→ GREEN。途中で判明した `record_once` の握りつぶしは上記のとおり RED（200）→ 修正 → GREEN。REFACTOR: 判定なし
+    - 品質・セキュリティ: RSpec 全件 407 examples 0 failures・RuboCop 指摘なし・Brakeman 警告 0（Webhook 処理の変更のため実行）
+    - 9.4 の request spec「未知の種目を含む場合は何も保存しない（候補提案の返信は 10 章）」は保存なし・200 の検証のままで引き続き通る（返信内容は本項目の spec が担う）
 - [ ] 10.6 postback 処理の実装
   - 実施内容: 候補選択（該当行の種目を確定）、新規種目として登録（独自種目を作成して確定）、キャンセル（保留全体を破棄）を実装する。保留 id 不一致・不存在（stale postback）・期限切れは再入力案内を返す（仕様書 4.3.1(3)）。候補選択で確定した種目があれば、**保存の時点で**未確認の `exercise_aliases` 行を作成（既存の未確認行は削除＋新規作成）し、エコーバックの末尾に別名確認の 1 行と Quick Reply `[はい] [いいえ]` を付ける（確認文の略称・種目名は別名行から取る）。`alias_confirm` で confirmed を true に、`alias_decline` で行を削除し、該当行が無ければ「この確認は無効になりました」を返す（仕様書 4.3.1(4)・10.2b）
   - テスト種別: request spec（選択・新規登録・キャンセル・stale・期限切れ、別名確認の はい・いいえ・stale）
