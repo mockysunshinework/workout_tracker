@@ -92,11 +92,11 @@ module LineMessages
   # 候補（最大 4）→ 新規種目として登録（固定文言）→ キャンセル。data は識別子のみ（LinePostback）
   def candidate_buttons(pending:, candidates:)
     name = pending.current_unknown["exercise_name"]
-    candidate_buttons = candidates.map do |exercise|
+    exercise_buttons = candidates.map do |exercise|
       Button.new(label: truncate_label(exercise.name), display_text: truncate_display_text(exercise.name),
                  data: LinePostback.encode(action: :choose, pending_id: pending.id, exercise_id: exercise.id))
     end
-    candidate_buttons + [
+    exercise_buttons + [
       Button.new(label: "新規種目として登録", display_text: truncate_display_text("#{name}を新規種目として登録"),
                  data: LinePostback.encode(action: :create, pending_id: pending.id)),
       Button.new(label: "キャンセル", display_text: "キャンセル",
