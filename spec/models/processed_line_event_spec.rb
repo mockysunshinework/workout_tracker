@@ -40,4 +40,18 @@ RSpec.describe ProcessedLineEvent do
       expect(described_class.find_by(webhook_event_id: event_id).received_at).to be_present
     end
   end
+
+  # 10.5 で判明: 業務処理（ブロック）側の一意制約違反を「イベント重複」と取り違えてはいけない。
+  # 例: 保留（pending_workout_entries）の並行作成。4.2.4 の一時的な障害として 500 → 再送でやり直す
+  describe "ブロック内の RecordNotUnique" do
+    it "握りつぶさず伝播し、イベント ID の登録も巻き戻る" do
+      expect {
+        described_class.record_once("01EVENT0000000000000000009") do
+          raise ActiveRecord::RecordNotUnique, "duplicate key value violates unique constraint \"index_pending_workout_entries_on_user_id\""
+        end
+      }.to raise_error(ActiveRecord::RecordNotUnique)
+
+      expect(described_class.exists?(webhook_event_id: "01EVENT0000000000000000009")).to be false
+    end
+  end
 end
