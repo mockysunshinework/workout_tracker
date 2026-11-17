@@ -633,10 +633,34 @@
     - 品質・セキュリティ: RSpec 全件 407 examples 0 failures・RuboCop 指摘なし・Brakeman 警告 0（Webhook 処理の変更のため実行）
     - 9.4 の request spec「未知の種目を含む場合は何も保存しない（候補提案の返信は 10 章）」は保存なし・200 の検証のままで引き続き通る（返信内容は本項目の spec が担う）
   - レビュー指摘に対応（2026-11-10・PR #86 の @claude レビュー。approve 相当・ブロッカーなし）: 「`LineMessages.candidate_buttons` 内でメソッドと同名のローカル変数 `candidate_buttons` を使っていて読みにくい」→ **正当・修正**（`exercise_buttons` にリネーム。挙動不変のリファクタリングのため RED なし。既存の line_messages_spec / request spec が前後とも green）。CI 側: PR 作成直後の 4 ジョブ失敗は `ubuntu-latest` が 26.04 に切り替わり Ruby 3.3.10 のビルドが無かったため（#87 で 24.04 に固定）、続く scan_ruby 失敗は Rails 8.1.4.1 セキュリティリリースの勧告（#87 で 8.1.4.1 に更新）。いずれも本 PR と無関係で、Update branch 後に全ジョブ green
-- [ ] 10.6 postback 処理の実装
+- [x] 10.6 postback 処理の実装
   - 実施内容: 候補選択（該当行の種目を確定）、新規種目として登録（独自種目を作成して確定）、キャンセル（保留全体を破棄）を実装する。保留 id 不一致・不存在（stale postback）・期限切れは再入力案内を返す（仕様書 4.3.1(3)）。候補選択で確定した種目があれば、**保存の時点で**未確認の `exercise_aliases` 行を作成（既存の未確認行は削除＋新規作成）し、エコーバックの末尾に別名確認の 1 行と Quick Reply `[はい] [いいえ]` を付ける（確認文の略称・種目名は別名行から取る）。`alias_confirm` で confirmed を true に、`alias_decline` で行を削除し、該当行が無ければ「この確認は無効になりました」を返す（仕様書 4.3.1(4)・10.2b）
   - テスト種別: request spec（選択・新規登録・キャンセル・stale・期限切れ、別名確認の はい・いいえ・stale）
   - 完了条件: 8 ケースの spec が通る
+  - 作業分解（tdd-dev 実行管理用）:
+    - [x] `LinePostback.decode`（受信 data の解釈。未知の action・数字でない id は捨てる）
+    - [x] `ExerciseAlias.propose!`（確認待ち行の作成・同じ略称の確認待ちは削除＋新規作成・確認済みなら作らない）
+    - [x] `PendingWorkoutEntry`: 確認中の種目の確定（`resolve_current!`）・保存用データへの復元（`resolved_entries`）・別名確認の対象（`alias_candidates`）
+    - [x] `PostbackHandler`: choose / create / cancel / alias_confirm / alias_decline と stale・期限切れ
+    - [x] `LineMessages` の返信文・はい／いいえ ボタンと Webhook の統合（request spec 8 ケース）
+  - 実施結果（2026-11-10・ブランチ `feat/f03-postback-handling`）:
+    - `PostbackHandler`（`app/models`・`RecordMessageHandler` と同じ module 形式）: `call(user:, data:)` が `Outcome`（`:saved` / `:unknown_exercises` / `:invalid` / `:cancelled` / `:stale_pending` / `:alias_confirmed` / `:alias_declined` / `:stale_alias`）を返す。コントローラは `handle_postback` で `record_once` の中から呼び、コミット後に `postback_reply_for` の文とボタンを返信する（message と同じ形）
+    - **権限分離**: data は外部入力として扱い、保留は `find_by(id:, user:)`、種目は `Exercise.available_for(user)`、別名は `user.exercise_aliases` から引く。他ユーザーの id は「見つからない」（stale）になる。`resolved_entries` も保存直前に `available_for` で引き直す
+    - 保存は 9.4 の `RecordMessageHandler.save` に合流（private を外して公開。エラー文の組み立ては `invalid_message` に切り出して共用）。保留の行は `RecordMessageParser::Entry` / `Group` に復元するので、エコーバックは通常の保存と同じ
+    - 別名: 保存の時点で `ExerciseAlias.propose!`（確認待ち行は削除＋新規作成で id 再採番）。エコーバックの末尾に確認の 1 行＋ `[はい] [いいえ]`。はい／いいえ の対象は**確認待ちの行だけ**（確認済みの行への いいえ で別名が消えないようにする）
+    - **仕様に記載がなく実装詳細として決めたこと**（変更が必要なら指摘してください）:
+      - **記録日は保留を受け付けた日**（`pending.created_at` の日付・JST）。23:50 に送って 0:05 にボタンを押しても送った日の記録になる（仕様書 4.2.2「記録日は受信日」に合わせた）
+      - **新規登録する種目の bodyweight は、その入力に自重（重量なし）のグループがあれば true**、無ければ false。重量必須で作ると、確定しようとしている自重の記録自体が保存できないため。category は空（Web の種目管理で扱う）
+      - **同じ種目名（正規化して比較）の未解決行はまとめて確定する**（同じ名前を 2 回聞かない。10.5 の `unknown_names.uniq` と揃えた）
+      - **保存時の検証エラー（例: `ベンチ/10` で重量必須のベンチプレスを選んだ）は保留を破棄して理由を返信**する。ボタンでは直せないため再入力してもらう
+      - 保留中に解決済みの種目が Web で削除されていた場合、choose の `exercise_id` が使えない種目だった場合、data が解釈できない場合は、いずれも「無効になりました・もう一度送ってください」（`:stale_pending`）
+      - 同じ略称が**確認済み**の別名になっていた場合は確認待ち行を作らず、別名確認も付けない（確認済みの付け替え・解除は Stage 1 では行わない: 仕様書 4.3.1(4)）
+    - `parsed_lines` に **`chosen` キーを追加**（postback で確定した行だけ。true = 候補から選択＝別名確認の対象、false = 新規登録）。10.5 で確定した構造への追加で、既存キーは変えていない
+    - 未知の種目がまだ残っている場合は保存せず次の候補を返す（`:unknown_exercises`。10.5 の返信経路を再利用）。**10.7 の一部を先取りした形**になったが、未定義のまま main に入れると 2 種目以上の入力でボタンが機能しないため最小限だけ実装し、handler spec 1 件で固定した。複数種目の通し（順次確定→一括保存→別名確認の順次提示・途中キャンセル）の検証と、別名確認の 2 件目以降の提示は 10.7 に残る
+    - TDD: `line_postback_spec` +3（decode）・`exercise_alias_spec` +4（propose!）・`pending_workout_entry_spec` +8・`line_messages_spec` +6・`postback_handler_spec`（12・新規）・`spec/requests/line_postback_spec.rb`（11・新規: 完了条件の 8 ケース＝選択 / 新規登録 / キャンセル / stale / 期限切れ / はい / いいえ / 別名 stale に加え、再送で二重保存しない・解釈不能な data・別名行の作り直しで古い [はい] が無効）→ RED（44 件。未定義のメソッド・postback が未処理で返信も保存もされない。`PostbackHandler` は定数未定義だと読み込みエラーになり RED と呼べないため、空の module だけ先に置いて「`call` が無い」失敗にした）→ GREEN。途中 1 件（`pending_id[]=1` の data）が残り、キーの形も検証するようにして解消。REFACTOR: 判定なし（重複は `invalid_message` の切り出しで GREEN 中に解消済み）
+    - 品質・セキュリティ: RSpec 全件 451 examples 0 failures・RuboCop 指摘なし・Brakeman 警告 0（外部入力を受ける Webhook 処理の追加のため実行）。依存の追加なし
+    - **10.7 への申し送り**: (1) postback の data は仕様で `pending_id` と `exercise_id` だけなので、複数種目の順次確認では「1 件目の候補ボタン」を 2 件目の確認中に押すと 2 件目に適用される。LINE では新しいメッセージが来ると Quick Reply は消えるため通常は押せないが、10.7 で扱いを決める (2) 完全一致で解決済みの行に無効な値がある入力（例: `ベンチプレス/10` と未知種目の 2 行）は、候補に答えた後で保存エラーになる。新規登録を選んでいた場合は作った種目だけが残る。保留を作る前に検証するかどうかは 10.7 で検討する
+    - 実物の LINE でボタンを押して postback が届くことは未確認（LINE API はモック）。12.1 の実機確認で確かめる
 - [ ] 10.7 全件確定時の一括保存の実装
   - 実施内容: 未知種目が複数ある場合は 1 件ずつ順に候補確認し、全件確定した時点で 9.4 の保存フローに合流して一括保存、保留行を削除する（部分保存しない）。未確認の別名行は一括保存の時点でまとめて作り（途中キャンセルでは作らない）、別名確認は一括保存後のエコーバックに 1 件目を付け、はい／いいえ の返信に次の確認を乗せる（仕様書 4.3.1(4)）
   - テスト種別: request spec（未知 2 種目の順次確定→一括保存→別名確認 2 件の順次提示）

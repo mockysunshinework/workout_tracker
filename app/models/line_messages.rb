@@ -104,6 +104,44 @@ module LineMessages
     ]
   end
 
+  # 候補選択で保存した直後の別名確認（SPEC 4.3.1(4)）。エコーバックの末尾に 1 行で添える。
+  # 略称と種目名は別名行から取る（保留は保存時に消えている）
+  def alias_question(exercise_alias)
+    "今後「#{exercise_alias.alias}」は#{exercise_alias.exercise.name}として記録しますか？"
+  end
+
+  def alias_buttons(exercise_alias)
+    [
+      Button.new(label: "はい", display_text: "はい",
+                 data: LinePostback.encode(action: :alias_confirm, alias_id: exercise_alias.id)),
+      Button.new(label: "いいえ", display_text: "いいえ",
+                 data: LinePostback.encode(action: :alias_decline, alias_id: exercise_alias.id))
+    ]
+  end
+
+  def alias_confirmed(exercise_alias)
+    "今後「#{exercise_alias.alias}」は#{exercise_alias.exercise.name}として記録します。"
+  end
+
+  # いいえ は記憶しない（次に同じ略称で候補を選べばまた確認が出る）
+  def alias_declined(exercise_alias)
+    "「#{exercise_alias.alias}」は別名として登録しませんでした。次回も候補から選べます。"
+  end
+
+  # 該当する確認待ちの別名行が無い（作り直された・確認済み・削除済み）
+  def stale_alias
+    "この確認は無効になりました。"
+  end
+
+  # 保留が見つからない・期限切れ（SPEC 4.3.1(3)）: 再入力を案内する
+  def stale_pending
+    "この選択は無効になりました（時間切れ、または新しい入力に置き換わっています）。お手数ですが、もう一度記録を送ってください。"
+  end
+
+  def cancelled
+    "キャンセルしました。記録は保存していません。"
+  end
+
   # 20 文字を超える label は 19 文字＋「…」（書記素クラスタ単位。String#length ではない）
   def truncate_label(text)
     truncate_graphemes(text, BUTTON_LABEL_MAX)
