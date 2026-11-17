@@ -7,7 +7,8 @@
 #       "groups" => [ { "weight_kg" => "60.0", "reps" => 5, "sets" => 3 } ] },
 #     { "line_number" => 2, "exercise_name" => "ベンチ", "exercise_id" => nil, "groups" => [ ... ] }
 #   ]
-#   - exercise_id: 完全一致で解決済みなら種目 id、未知なら nil。10.6 の postback（候補選択・新規登録）で埋める
+#   - exercise_id: 完全一致で解決済みなら種目 id、未知なら nil。postback（候補選択・新規登録）で埋める（10.6）
+#   - chosen: postback で確定した行にだけ付く。true = 候補から選んだ（別名確認の対象）、false = 新規登録
 #   - weight_kg: 小数 1 桁の文字列（BigDecimal の JSON 表現）。自重は nil
 #   - 先頭の exercise_id が nil の行が「いま確認中の未知種目」（current_unknown）
 class PendingWorkoutEntry < ApplicationRecord
@@ -38,5 +39,54 @@ class PendingWorkoutEntry < ApplicationRecord
 
   def expired?
     expires_at <= Time.current
+  end
+
+  # 確認中の未知種目を exercise で確定する（SPEC 4.3.1(2) 手順 5）。同じ種目名（正規化して比較）の未解決行は
+  # まとめて確定する（同じ名前を 2 回聞かない）。chosen は候補から選んだか（true）新規登録か（false）
+  def resolve_current!(exercise, chosen:)
+    name = current_unknown_normalized_name
+    lines = parsed_lines.map do |line|
+      next line unless line["exercise_id"].nil? && ExerciseNameNormalizer.call(line["exercise_name"]) == name
+
+      line.merge("exercise_id" => exercise.id, "chosen" => chosen)
+    end
+    update!(parsed_lines: lines)
+  end
+
+  # 確認中の未知種目に自重（重量なし）の入力があるか。新規登録する種目の bodyweight を決めるのに使う
+  def current_unknown_bodyweight?
+    name = current_unknown_normalized_name
+    parsed_lines.any? do |line|
+      ExerciseNameNormalizer.call(line["exercise_name"]) == name && line["groups"].any? { |group| group["weight_kg"].nil? }
+    end
+  end
+
+  # 全行確定後の保存用データ: 行ごとの [種目, RecordMessageParser::Entry]（RecordMessageHandler.save の入力と同じ形）。
+  # 種目はこのユーザーが使えるもの（独自＋プリセット）からだけ引く。保留中に種目が削除されたなどで
+  # 引けない行があれば nil（呼び出し側は無効な保留として扱う）
+  def resolved_entries
+    exercises = Exercise.available_for(user).where(id: parsed_lines.map { |line| line["exercise_id"] }).index_by(&:id)
+    return nil unless parsed_lines.all? { |line| exercises.key?(line["exercise_id"]) }
+
+    parsed_lines.map do |line|
+      groups = line["groups"].map do |group|
+        RecordMessageParser::Group.new(weight_kg: group["weight_kg"]&.to_d, reps: group["reps"], sets: group["sets"])
+      end
+      entry = RecordMessageParser::Entry.new(line_number: line["line_number"], exercise_name: line["exercise_name"], groups: groups)
+      [ exercises.fetch(line["exercise_id"]), entry ]
+    end
+  end
+
+  # 別名確認の対象: 候補から選んで確定した行の [略称（入力どおり）, 種目 id]。正規化後の略称で重複を除く
+  def alias_candidates
+    parsed_lines.select { |line| line["chosen"] }
+                .uniq { |line| ExerciseNameNormalizer.call(line["exercise_name"]) }
+                .map { |line| [ line["exercise_name"], line["exercise_id"] ] }
+  end
+
+  private
+
+  def current_unknown_normalized_name
+    ExerciseNameNormalizer.call(current_unknown["exercise_name"])
   end
 end
