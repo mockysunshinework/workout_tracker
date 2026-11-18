@@ -111,4 +111,44 @@ RSpec.describe ExerciseAlias, type: :model do
       expect(described_class.exists?(other.id)).to be true
     end
   end
+
+  # 10.7 一括保存の時点で、候補から選んだ種目の確認待ち行をまとめて作る（SPEC 4.3.1(4)）。
+  # 利用者の確認待ち行は「直近の保存の分」だけにする（無視された確認を後から蒸し返さない）
+  describe ".replace_proposals!" do
+    let(:bench) { create(:exercise, :preset, name: "ベンチプレス") }
+    let(:deadlift) { create(:exercise, :preset, name: "デッドリフト") }
+
+    it "渡した順に確認待ちの行を作って返す" do
+      created = described_class.replace_proposals!(user: user, proposals: [ [ "ベンチ", bench ], [ "デッド", deadlift ] ])
+
+      expect(created.map { |a| [ a.alias, a.exercise, a.confirmed ] }).to eq [ [ "ベンチ", bench, false ], [ "デッド", deadlift, false ] ]
+      expect(created.map(&:id)).to eq created.map(&:id).sort
+    end
+
+    it "以前の確認待ち行は略称が違っても削除する（無視された確認は いいえ と同じ扱い）" do
+      ignored = create(:exercise_alias, user: user, exercise: deadlift, alias: "デッド")
+
+      described_class.replace_proposals!(user: user, proposals: [ [ "ベンチ", bench ] ])
+
+      expect(described_class.exists?(ignored.id)).to be false
+      expect(user.exercise_aliases.sole.alias).to eq "ベンチ"
+    end
+
+    it "確認済みの別名は消さず、同じ略称の確認待ち行も作らない" do
+      confirmed = create(:exercise_alias, :confirmed, user: user, exercise: bench, alias: "ベンチ")
+
+      created = described_class.replace_proposals!(user: user, proposals: [ [ "ベンチ", deadlift ], [ "デッド", deadlift ] ])
+
+      expect(created.map(&:alias)).to eq [ "デッド" ]
+      expect(confirmed.reload).to have_attributes(exercise: bench, confirmed: true)
+    end
+
+    it "他ユーザーの確認待ち行には影響しない" do
+      other = create(:exercise_alias, exercise: bench, alias: "ベンチ")
+
+      described_class.replace_proposals!(user: user, proposals: [ [ "ベンチ", bench ] ])
+
+      expect(described_class.exists?(other.id)).to be true
+    end
+  end
 end

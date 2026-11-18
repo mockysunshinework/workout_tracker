@@ -92,22 +92,25 @@ class LineWebhooksController < ApplicationController
   # 別名確認の 1 行と はい／いいえ を付ける（独立メッセージにしない: SPEC 4.3.1(4)）
   def postback_reply_for(outcome)
     case outcome.status
-    when :saved
-      recorded = LineMessages.recorded(outcome.saved)
-      exercise_alias = outcome.exercise_alias
-      return [ recorded, [] ] unless exercise_alias
-
-      [ "#{recorded}\n#{LineMessages.alias_question(exercise_alias)}", LineMessages.alias_buttons(exercise_alias) ]
+    when :saved then with_alias_question(LineMessages.recorded(outcome.saved), outcome.exercise_alias)
     when :unknown_exercises
       [ LineMessages.candidate_prompt(pending: outcome.pending, candidates: outcome.candidates),
         LineMessages.candidate_buttons(pending: outcome.pending, candidates: outcome.candidates) ]
     when :invalid then [ LineMessages.invalid(outcome.invalid_messages), [] ]
     when :cancelled then [ LineMessages.cancelled, [] ]
     when :stale_pending then [ LineMessages.stale_pending, [] ]
-    when :alias_confirmed then [ LineMessages.alias_confirmed(outcome.exercise_alias), [] ]
-    when :alias_declined then [ LineMessages.alias_declined(outcome.exercise_alias), [] ]
+    when :alias_confirmed then with_alias_question(LineMessages.alias_confirmed(outcome.exercise_alias), outcome.next_alias)
+    when :alias_declined then with_alias_question(LineMessages.alias_declined(outcome.exercise_alias), outcome.next_alias)
     when :stale_alias then [ LineMessages.stale_alias, [] ]
     end
+  end
+
+  # 返信文の末尾に別名確認の 1 行を添え、はい／いいえ のボタンを付ける。確認する別名が無ければ文だけを返す。
+  # 別名確認は 1 件ずつ: 保存のエコーバックに 1 件目、はい／いいえ の返信に次の 1 件を乗せる（SPEC 4.3.1(4)）
+  def with_alias_question(text, exercise_alias)
+    return [ text, [] ] unless exercise_alias
+
+    [ "#{text}\n#{LineMessages.alias_question(exercise_alias)}", LineMessages.alias_buttons(exercise_alias) ]
   end
 
   # Outcome → [返信文, Quick Reply のボタン]。未知の種目は候補提示（SPEC 4.3.1(2)。確定処理は postback）

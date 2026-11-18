@@ -83,7 +83,7 @@ RSpec.describe PendingWorkoutEntry, type: :model do
     it "確認中の未知種目の行に種目 id を入れて保存し、次の未知種目が確認対象になる" do
       entry = create(:pending_workout_entry, user: user, parsed_lines: lines)
 
-      entry.resolve_current!(bench, chosen: true)
+      entry.resolve_current!(bench)
 
       entry.reload
       expect(entry.parsed_lines[1]).to include("exercise_id" => bench.id, "chosen" => true)
@@ -94,24 +94,81 @@ RSpec.describe PendingWorkoutEntry, type: :model do
       same_name = lines + [ lines[1].merge("line_number" => 4, "exercise_name" => "べんち") ]
       entry = create(:pending_workout_entry, user: user, parsed_lines: same_name)
 
-      entry.resolve_current!(bench, chosen: true)
+      entry.resolve_current!(bench)
 
       expect(entry.reload.parsed_lines.map { |l| l["exercise_id"] }).to eq [ 1, bench.id, nil, bench.id ]
     end
+  end
 
-    it "新規登録での確定（chosen: false）は別名の対象にしない" do
+  # 10.7 新規登録は「登録する」と決めたことだけを保留に記録し、種目は一括保存の時点で作る
+  # （途中キャンセルで何も残さないため）
+  describe "#resolve_current_as_new!" do
+    it "種目は作らず、確認中の行に新規登録の印（chosen: false）を付けて、次の未知種目へ進む" do
       entry = create(:pending_workout_entry, user: user, parsed_lines: lines)
 
-      entry.resolve_current!(bench, chosen: false)
+      expect { entry.resolve_current_as_new! }.not_to change(Exercise, :count)
 
-      expect(entry.reload.parsed_lines[1]).to include("exercise_id" => bench.id, "chosen" => false)
+      entry.reload
+      expect(entry.parsed_lines[1]).to include("exercise_id" => nil, "chosen" => false)
+      expect(entry.current_unknown["exercise_name"]).to eq "DL"
+    end
+
+    it "全行が確定（選択または新規登録）していれば current_unknown は nil" do
+      entry = create(:pending_workout_entry, user: user, parsed_lines: lines.last(1))
+
+      entry.resolve_current_as_new!
+
+      expect(entry.reload.current_unknown).to be_nil
     end
   end
 
-  describe "#current_unknown_bodyweight?" do
-    it "確認中の種目名の行に自重（重量なし）のグループがあれば true" do
-      expect(build(:pending_workout_entry, parsed_lines: lines.last(1))).to be_current_unknown_bodyweight
-      expect(build(:pending_workout_entry, parsed_lines: lines)).not_to be_current_unknown_bodyweight
+  describe "#create_new_exercises!" do
+    it "新規登録の印が付いた種目名ごとに独自種目を作り、行に種目 id を入れる" do
+      entry = create(:pending_workout_entry, user: user, parsed_lines: lines)
+      entry.resolve_current_as_new! # ベンチ（重量あり）
+      entry.resolve_current_as_new! # DL（自重）
+
+      expect { entry.create_new_exercises! }.to change { user.exercises.count }.by(2)
+
+      bench_like = user.exercises.find_by!(name: "ベンチ")
+      deadlift_like = user.exercises.find_by!(name: "DL")
+      expect(entry.reload.parsed_lines.map { |l| l["exercise_id"] }).to eq [ 1, bench_like.id, deadlift_like.id ]
+    end
+
+    it "自重（重量なし）のグループがある種目名は重量を省略できる種目として、無ければ重量必須で作る" do
+      entry = create(:pending_workout_entry, user: user, parsed_lines: lines)
+      2.times { entry.resolve_current_as_new! }
+
+      entry.create_new_exercises!
+
+      expect(user.exercises.find_by!(name: "ベンチ").bodyweight).to be false
+      expect(user.exercises.find_by!(name: "DL").bodyweight).to be true
+    end
+
+    it "同じ種目名（表記ゆれを含む）の行は 1 つの種目にまとめる" do
+      same_name = lines.first(2) + [ lines[1].merge("line_number" => 3, "exercise_name" => "べんち") ]
+      entry = create(:pending_workout_entry, user: user, parsed_lines: same_name)
+      entry.resolve_current_as_new!
+
+      expect { entry.create_new_exercises! }.to change { user.exercises.count }.by(1)
+
+      ids = entry.reload.parsed_lines.last(2).map { |l| l["exercise_id"] }
+      expect(ids.uniq).to eq [ user.exercises.sole.id ]
+    end
+  end
+
+  # 10.7 順次確認で次の未知種目へ進むたびに id を振り直し、前の確認のボタンを無効にする
+  describe "#reissue!" do
+    it "同じ内容・同じ受付時刻・同じ期限のまま、新しい id の行に作り直す" do
+      entry = travel_to(10.minutes.ago) { create(:pending_workout_entry, user: user, parsed_lines: lines) }
+
+      reissued = entry.reissue!
+
+      expect(reissued.id).not_to eq entry.id
+      expect(described_class.exists?(entry.id)).to be false
+      expect(described_class.where(user: user).sole).to eq reissued
+      expect(reissued).to have_attributes(source_text: entry.source_text, parsed_lines: entry.parsed_lines,
+                                          created_at: entry.created_at, expires_at: entry.expires_at)
     end
   end
 

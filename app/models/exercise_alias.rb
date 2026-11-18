@@ -27,6 +27,17 @@ class ExerciseAlias < ApplicationRecord
     end
   end
 
+  # 一括保存の時点で、候補から選んだ種目の確認待ち行をまとめて作る（SPEC 4.3.1(4)・10.7）。
+  # proposals は [略称, 種目] の配列。作った行を渡した順（＝ id 順）で返す。
+  # 先に利用者の確認待ち行をすべて削除する: 確認待ちとして残るのは「直近の保存の分」だけにして、
+  # 無視された以前の確認（無視 ＝ いいえ）が、後の はい／いいえ の返信で蒸し返されないようにする
+  def self.replace_proposals!(user:, proposals:)
+    transaction do
+      where(user: user, confirmed: false).delete_all
+      proposals.filter_map { |alias_name, exercise| propose!(user: user, alias_name: alias_name, exercise: exercise) }
+    end
+  end
+
   private
 
   # 表記は入力どおり保持し、照合用の名前だけを種目名と同じ規則で正規化する
