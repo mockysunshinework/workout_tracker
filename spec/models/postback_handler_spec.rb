@@ -93,6 +93,21 @@ RSpec.describe PostbackHandler, type: :model do
     expect(PendingWorkoutEntry.exists?(pending.id)).to be false
   end
 
+  # PR #92 レビュー所見 1: 新規登録を選んだ後で別の行が保存エラーになると、作った種目だけが残っていた
+  it "新規登録を選んだ入力が保存エラーになった場合は、作りかけの種目も残さない" do
+    # 1 行目は完全一致で解決済みだが、重量必須の種目に自重で入力されている（保存時に検証エラーになる）
+    pending = create(:pending_workout_entry, user: user, parsed_lines: lines([ "ベンチプレス", bench.id, nil ], [ "ランジ", nil, "20.0" ]))
+
+    outcome = handle(:create, pending_id: pending.id)
+
+    expect(outcome.status).to eq :invalid
+    expect(outcome.invalid_messages.first).to include("ベンチプレス")
+    expect(user.exercises.count).to eq 0
+    expect(WorkoutSet.count).to eq 0
+    expect(Workout.count).to eq 0
+    expect(PendingWorkoutEntry.exists?(pending.id)).to be false
+  end
+
   it "保留中に解決済みの種目が削除されていた場合は :stale_pending で保留を破棄する" do
     mine = create(:exercise, user: user, name: "マイプレス")
     pending = create(:pending_workout_entry, user: user, parsed_lines: lines([ "マイプレス", mine.id, "40.0" ], [ "ベンチ", nil, "60.0" ]))

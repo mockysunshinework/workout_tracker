@@ -41,25 +41,31 @@ module PostbackHandler
       return Outcome.new(status: :stale_pending)
     end
 
-    case postback.action
-    when "cancel"
+    if postback.action == "cancel"
       pending.destroy!
       return Outcome.new(status: :cancelled)
-    when "choose"
-      exercise = Exercise.available_for(user).find_by(id: postback.ids["exercise_id"])
-      return Outcome.new(status: :stale_pending) if exercise.nil?
-
-      pending.resolve_current!(exercise, chosen: true)
-    when "create"
-      # 入力名そのものを独自種目にする。自重で入力されていれば重量を省略できる種目として作る
-      # （重量必須で作ると、いま確定しようとしている自重の記録が保存できないため）
-      exercise = user.exercises.create!(name: pending.current_unknown["exercise_name"], bodyweight: pending.current_unknown_bodyweight?)
-      pending.resolve_current!(exercise, chosen: false)
     end
 
-    save_if_resolved(user, pending)
+    # 確定と保存は savepoint（requires_new）で囲む。保存時の検証エラーで、作りかけの独自種目や保留の更新を
+    # まとめて巻き戻すため（外側のトランザクション＝冪等 ID の登録は中断させない）
+    PendingWorkoutEntry.transaction(requires_new: true) do
+      if postback.action == "choose"
+        exercise = Exercise.available_for(user).find_by(id: postback.ids["exercise_id"])
+        next Outcome.new(status: :stale_pending) if exercise.nil?
+
+        pending.resolve_current!(exercise, chosen: true)
+      else
+        # create: 入力名そのものを独自種目にする。自重で入力されていれば重量を省略できる種目として作る
+        # （重量必須で作ると、いま確定しようとしている自重の記録が保存できないため）
+        exercise = user.exercises.create!(name: pending.current_unknown["exercise_name"], bodyweight: pending.current_unknown_bodyweight?)
+        pending.resolve_current!(exercise, chosen: false)
+      end
+
+      save_if_resolved(user, pending)
+    end
   rescue ActiveRecord::RecordInvalid => e
-    # 例: 重量が必要な種目を自重の入力に選んだ。ボタンでは直せないので保留を破棄し、理由を返して再入力してもらう
+    # 例: 重量が必要な種目を自重の入力に選んだ。ボタンでは直せないので保留を破棄し、理由を返して再入力してもらう。
+    # savepoint が巻き戻った後なので、残るのは保留の破棄だけ（何も保存しない）
     pending.destroy!
     Outcome.new(status: :invalid, invalid_messages: [ RecordMessageHandler.invalid_message(e) ])
   end
