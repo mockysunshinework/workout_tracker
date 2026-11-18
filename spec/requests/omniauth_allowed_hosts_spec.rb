@@ -95,6 +95,15 @@ RSpec.describe "LINE Login: コールバック URL のホスト検証", type: :r
         .to eq [ "app.example.jp", "tunnel.example.net" ]
     end
 
+    # PR #98 レビュー所見 1: 比較対象は request.host（ホスト名だけ）なので、URL のまま書くと一致せず
+    # 全拒否になる。トンネルの URL を貼り付けるような書き方でも、ホスト名だけを取り出して許可する
+    it "スキーム・ポート・パスを付けて書かれていても、ホスト名だけを取り出す" do
+      hosts = "https://app.example.jp, tunnel.example.net:3000, http://Abc.ngrok-free.app/users/auth/line/callback"
+
+      expect(load_with(env: "production", allowed_hosts: hosts))
+        .to eq [ "app.example.jp", "tunnel.example.net", "Abc.ngrok-free.app" ]
+    end
+
     it "production で APP_ALLOWED_HOSTS が未設定なら、どのホストも許可しない（nil ＝ 検証なし、にはしない）" do
       expect(load_with(env: "production")).to eq []
     end
