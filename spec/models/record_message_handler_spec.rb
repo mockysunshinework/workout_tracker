@@ -156,6 +156,60 @@ RSpec.describe RecordMessageHandler, type: :model do
       expect(WorkoutSet.count).to eq 0
     end
 
+    # 10.8: 未知の種目を含んでいても、完全一致で解決済みの行が保存できない値なら、候補確認に進む前に
+    # その場で保存エラーを返す（どう答えても保存できない入力に質問を重ねない）。
+    # 優先順位は パース失敗 → 解決済みの行の検証エラー → 未知の種目（SPEC 4.2.3）
+    describe "未知の種目と、保存できない解決済みの行が混ざっている場合" do
+      it ":invalid を返し、保留を作らず、候補も返さず、何も保存しない" do
+        outcome = handle("ベンチプレス/10\nランジ20/10")
+
+        expect(outcome.status).to eq :invalid
+        expect(outcome.invalid_messages.join).to include("ベンチプレス")
+        expect(outcome.pending).to be_nil
+        expect(outcome.candidates).to eq []
+        expect(PendingWorkoutEntry.count).to eq 0
+        expect(Workout.count).to eq 0
+        expect(WorkoutSet.count).to eq 0
+      end
+
+      it "既存の保留は置き換えない（パース失敗のときと同じく、保存も保留もしない）" do
+        existing = create(:pending_workout_entry, user: user)
+
+        expect(handle("ベンチプレス/10\nランジ20/10").status).to eq :invalid
+        expect(PendingWorkoutEntry.sole).to eq existing
+      end
+    end
+
+    describe "未知の種目があり、解決済みの行はすべて保存できる値の場合（10.8 の検証を通過）" do
+      it "従来どおり保留して候補を返し、検証のための試し保存は何も残さない" do
+        outcome = handle("ベンチプレス60/5/2\n懸垂/10\nランジ20/10")
+
+        expect(outcome.status).to eq :unknown_exercises
+        expect(outcome.pending).to eq PendingWorkoutEntry.sole
+        expect(Workout.count).to eq 0
+        expect(WorkoutSet.count).to eq 0
+      end
+
+      it "同日に既存の記録があっても、試し保存でセットを増やさない" do
+        workout = create(:workout, user: user, performed_on: day)
+        (1..3).each { |n| create(:workout_set, workout: workout, exercise: bench, set_number: n, weight_kg: 60, reps: 5) }
+
+        expect(handle("ベンチプレス70/3\nランジ20/10").status).to eq :unknown_exercises
+        expect(sets_of(bench)).to eq [ [ 1, 60, 5 ], [ 2, 60, 5 ], [ 3, 60, 5 ] ]
+      end
+
+      it "検証のための試し保存は、呼び出し側のトランザクション（冪等 ID の登録と保留の作成）を巻き戻さない" do
+        registered = ProcessedLineEvent.record_once("01EVENT0000000000000000108") do
+          handle("ベンチプレス60/5\nランジ20/10")
+        end
+
+        expect(registered).to be true
+        expect(ProcessedLineEvent.count).to eq 1
+        expect(PendingWorkoutEntry.count).to eq 1
+        expect(WorkoutSet.count).to eq 0
+      end
+    end
+
     it "無効入力でも呼び出し側のトランザクション（冪等 ID の登録）は中断しない" do # 筋トレ記録の保存に失敗しても、LINEイベント自体は“処理済み”として記録する ということ
       registered = ProcessedLineEvent.record_once("01EVENT0000000000000000001") do
         handle("ベンチプレス/10/3")
@@ -163,6 +217,29 @@ RSpec.describe RecordMessageHandler, type: :model do
 
       expect(registered).to be true
       expect(ProcessedLineEvent.count).to eq 1
+    end
+  end
+
+  # 10.6 で公開した返信用の 1 行（PostbackHandler と共用）。PR #92 レビュー所見 2 を受けて形を固定する
+  describe ".invalid_message" do
+    it "セットの検証エラーには種目名を添える" do
+      set = build(:workout_set, exercise: bench, weight_kg: nil)
+      set.validate
+
+      message = described_class.invalid_message(ActiveRecord::RecordInvalid.new(set))
+
+      expect(message).to start_with("ベンチプレス: ")
+      expect(message).to include(set.errors.full_messages.first)
+    end
+
+    it "種目を持たないレコード（種目そのものの作成失敗）ではエラー文だけを返す（先頭に区切りを付けない）" do
+      exercise = build(:exercise, user: user, name: nil)
+      exercise.validate
+
+      message = described_class.invalid_message(ActiveRecord::RecordInvalid.new(exercise))
+
+      expect(message).to eq exercise.errors.full_messages.join("、")
+      expect(message).not_to start_with(":")
     end
   end
 end

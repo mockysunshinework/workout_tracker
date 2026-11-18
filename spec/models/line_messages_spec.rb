@@ -139,6 +139,44 @@ RSpec.describe LineMessages do
     end
   end
 
+  # 10.6 postback への返信（SPEC 4.3.1(3)(4)）
+  describe "postback への返信文" do
+    let(:user) { create(:user) }
+    let(:bench) { create(:exercise, :preset, name: "ベンチプレス") }
+    let(:exercise_alias) { create(:exercise_alias, user: user, exercise: bench, alias: "ベンチ") }
+
+    it "別名確認の文は略称と種目名を別名行から取る" do
+      expect(described_class.alias_question(exercise_alias)).to eq "今後「ベンチ」はベンチプレスとして記録しますか？"
+    end
+
+    it "別名確認のボタンは はい / いいえ で、data には別名 id だけを入れる" do
+      buttons = described_class.alias_buttons(exercise_alias)
+
+      expect(buttons.map(&:label)).to eq %w[はい いいえ]
+      expect(buttons.map(&:display_text)).to eq %w[はい いいえ]
+      expect(buttons.map(&:data)).to eq [
+        "action=alias_confirm&alias_id=#{exercise_alias.id}", "action=alias_decline&alias_id=#{exercise_alias.id}"
+      ]
+    end
+
+    it "はい / いいえ の返信は略称と種目名を含む" do
+      expect(described_class.alias_confirmed(exercise_alias)).to eq "今後「ベンチ」はベンチプレスとして記録します。"
+      expect(described_class.alias_declined(exercise_alias)).to include("「ベンチ」").and include("登録しませんでした")
+    end
+
+    it "無効になった別名確認には「この確認は無効になりました」と返す" do
+      expect(described_class.stale_alias).to include("この確認は無効になりました")
+    end
+
+    it "無効になった保留（置き換え・期限切れ）には再入力を案内する" do
+      expect(described_class.stale_pending).to include("もう一度").and include("送ってください")
+    end
+
+    it "キャンセルは何も保存していないことを伝える" do
+      expect(described_class.cancelled).to include("キャンセル").and include("保存していません")
+    end
+  end
+
   it "welcome / welcome_back は input_guide を含む" do
     expect(described_class.welcome).to include(described_class.input_guide)
     expect(described_class.welcome_back).to include(described_class.input_guide)

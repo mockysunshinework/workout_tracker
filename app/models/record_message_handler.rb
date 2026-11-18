@@ -35,6 +35,9 @@ module RecordMessageHandler
     resolved = parse_result.entries.map { |entry| [ Exercise.find_exact_match(user: user, name: entry.exercise_name), entry ] }
     unknown_names = resolved.filter_map { |exercise, entry| entry.exercise_name if exercise.nil? }.uniq
     if unknown_names.any?
+      # 候補確認に進む前に、完全一致で解決済みの行が保存できる値かを確かめる。保存できない行があれば
+      # RecordInvalid が上がり、下の rescue で :invalid になる（保留も候補提示もしない・10.8 / SPEC 4.2.3）
+      validate_savable!(user, performed_on, resolved.reject { |exercise, _entry| exercise.nil? })
       # 未知の種目が 1 つでもあれば全行を保留し（部分保存しない）、先頭の未知種目から候補確認する（SPEC 4.3.1(3)）
       pending = PendingWorkoutEntry.replace_for!(user, source_text: text, parsed_lines: pending_lines(resolved))
       candidates = Exercise.candidates_for(user: user, name: unknown_names.first)
@@ -43,14 +46,20 @@ module RecordMessageHandler
 
     Outcome.new(status: :saved, saved: save(user, performed_on, resolved))
   rescue ActiveRecord::RecordInvalid => e
-    message = "#{e.record.try(:exercise)&.name}: #{e.record.errors.full_messages.join('、')}"
-    Outcome.new(status: :invalid, invalid_messages: [ message ])
+    Outcome.new(status: :invalid, invalid_messages: [ invalid_message(e) ])
+  end
+
+  # 保存時の検証エラー（RecordInvalid）→ 返信に載せる 1 行。セットのエラーには種目名を添える
+  def invalid_message(error)
+    [ error.record.try(:exercise)&.name, error.record.errors.full_messages.join("、") ].compact.join(": ")
   end
 
   # 当日 workout の取得/作成とセットの追記を savepoint（requires_new）で囲む。無効な値で失敗したときに
   # 作りかけの workout やセットだけを巻き戻し、外側のトランザクション（冪等 ID の登録）は中断させない。
   # 同じ種目が複数行に分かれていても種目ごとにまとめる（初出の順・グループは行の順）: DB の結果は 1 行に
-  # 並べた場合と同じなので、エコーバックも同じ形にする（PR #69 レビュー指摘）
+  # 並べた場合と同じなので、エコーバックも同じ形にする（PR #69 レビュー指摘）。
+  # resolved は [種目, RecordMessageParser::Entry] の配列。保留を確定した後の保存（PostbackHandler・10.6）も
+  # ここに合流する。無効な値は RecordInvalid を上げる（呼び出し側が :invalid にする）
   def save(user, performed_on, resolved)
     groups_by_exercise = resolved.each_with_object({}) do |(exercise, entry), acc|
       (acc[exercise] ||= []).concat(entry.groups)
@@ -68,6 +77,19 @@ module RecordMessageHandler
         SavedEntry.new(exercise_name: exercise.name, groups: groups, daily_set_count: counts.fetch(exercise.id))
       end
       Saved.new(performed_on: performed_on, entries: entries, total_set_count: counts.values.sum)
+    end
+  end
+
+  # resolved（[種目, Entry] の配列）が保存できる値かを、実際の保存と同じ経路で確かめる。保存できなければ
+  # RecordInvalid を上げ、保存できても必ず巻き戻す（何も残さない）。検証の条件をここに書き写さず、
+  # save（＝モデルの検証）をそのまま通すことで、判定が実際の保存とずれないようにする。
+  # save と同じく savepoint なので、外側のトランザクション（冪等 ID の登録・保留の作成）は巻き戻さない
+  def validate_savable!(user, performed_on, resolved)
+    return if resolved.empty?
+
+    Workout.transaction(requires_new: true) do
+      save(user, performed_on, resolved)
+      raise ActiveRecord::Rollback
     end
   end
 
@@ -89,5 +111,5 @@ module RecordMessageHandler
     text.to_s.unicode_normalize(:nfkc).include?("/")
   end
 
-  private_class_method :save, :pending_lines, :record_like?
+  private_class_method :validate_savable!, :pending_lines, :record_like?
 end
