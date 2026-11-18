@@ -43,14 +43,20 @@ module RecordMessageHandler
 
     Outcome.new(status: :saved, saved: save(user, performed_on, resolved))
   rescue ActiveRecord::RecordInvalid => e
-    message = "#{e.record.try(:exercise)&.name}: #{e.record.errors.full_messages.join('、')}"
-    Outcome.new(status: :invalid, invalid_messages: [ message ])
+    Outcome.new(status: :invalid, invalid_messages: [ invalid_message(e) ])
+  end
+
+  # 保存時の検証エラー（RecordInvalid）→ 返信に載せる 1 行。セットのエラーには種目名を添える
+  def invalid_message(error)
+    [ error.record.try(:exercise)&.name, error.record.errors.full_messages.join("、") ].compact.join(": ")
   end
 
   # 当日 workout の取得/作成とセットの追記を savepoint（requires_new）で囲む。無効な値で失敗したときに
   # 作りかけの workout やセットだけを巻き戻し、外側のトランザクション（冪等 ID の登録）は中断させない。
   # 同じ種目が複数行に分かれていても種目ごとにまとめる（初出の順・グループは行の順）: DB の結果は 1 行に
-  # 並べた場合と同じなので、エコーバックも同じ形にする（PR #69 レビュー指摘）
+  # 並べた場合と同じなので、エコーバックも同じ形にする（PR #69 レビュー指摘）。
+  # resolved は [種目, RecordMessageParser::Entry] の配列。保留を確定した後の保存（PostbackHandler・10.6）も
+  # ここに合流する。無効な値は RecordInvalid を上げる（呼び出し側が :invalid にする）
   def save(user, performed_on, resolved)
     groups_by_exercise = resolved.each_with_object({}) do |(exercise, entry), acc|
       (acc[exercise] ||= []).concat(entry.groups)
@@ -89,5 +95,5 @@ module RecordMessageHandler
     text.to_s.unicode_normalize(:nfkc).include?("/")
   end
 
-  private_class_method :save, :pending_lines, :record_like?
+  private_class_method :pending_lines, :record_like?
 end

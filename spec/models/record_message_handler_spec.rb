@@ -165,4 +165,27 @@ RSpec.describe RecordMessageHandler, type: :model do
       expect(ProcessedLineEvent.count).to eq 1
     end
   end
+
+  # 10.6 で公開した返信用の 1 行（PostbackHandler と共用）。PR #92 レビュー所見 2 を受けて形を固定する
+  describe ".invalid_message" do
+    it "セットの検証エラーには種目名を添える" do
+      set = build(:workout_set, exercise: bench, weight_kg: nil)
+      set.validate
+
+      message = described_class.invalid_message(ActiveRecord::RecordInvalid.new(set))
+
+      expect(message).to start_with("ベンチプレス: ")
+      expect(message).to include(set.errors.full_messages.first)
+    end
+
+    it "種目を持たないレコード（種目そのものの作成失敗）ではエラー文だけを返す（先頭に区切りを付けない）" do
+      exercise = build(:exercise, user: user, name: nil)
+      exercise.validate
+
+      message = described_class.invalid_message(ActiveRecord::RecordInvalid.new(exercise))
+
+      expect(message).to eq exercise.errors.full_messages.join("、")
+      expect(message).not_to start_with(":")
+    end
+  end
 end
