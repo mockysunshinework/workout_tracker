@@ -74,6 +74,7 @@ Gemfile の `solid_queue` / `solid_cache` / `solid_cable` は `rails new` の既
 - **リソースの取得は常に `current_user` を起点とする。** `Workout.find(params[:id])` のようにモデルから直接引かず、`current_user.workouts.find(params[:id])` の形で書く
 - 全画面で `authenticate_user!` を必須とする。除外してよいのは LINE Webhook エンドポイントのみ（Devise の画面・コールバックは `devise_controller?` で除外済み）
 - LINE Login のコールバックは state / nonce の照合と ID トークンの署名検証を OmniAuth に委ねる。`config/initializers/devise.rb` の `client_signing_alg` / `client_auth_method` / `pkce` は LINE 固有の必須設定であり、理由なく変えない（`docs/spike-line-login-oidc-20260904.md`）
+- LINE Login のコールバック URL はリクエストのホストから組み立てるため、使ってよいホストを `config/initializers/omniauth.rb` の `OmniAuth.config.allowed_hosts` で絞っている（環境変数 `APP_ALLOWED_HOSTS`。Host ヘッダーの偽装対策）。この設定を外したり nil にしたりしない（nil は「検証なし」になる）
 - CSRF 保護を除外してよいのは LINE Webhook エンドポイントのみ。他の箇所で `skip_forgery_protection` を使わない
 
 ### 秘密情報
