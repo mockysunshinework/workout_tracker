@@ -455,6 +455,12 @@
     - 品質・セキュリティ: RSpec 全件 257 examples 0 failures、RuboCop 指摘なし、Brakeman 警告 0（Webhook 処理の変更のため実行）
     - 未実施: 実機の LINE での follow / unfollow 確認は 12.1（トンネル公開が必要）で行う
     - レビュー指摘に対応（2026-09-06・`@claude` メンションレビュー・approve 表明、ブロッカーなし。2 件とも検証のうえ修正不要と判断）: (1) 「`User.exists?` 事前判定と作成の間の TOCTOU で Get profile が複数回呼ばれ、実害はフォールバック名」は**一部正当**。競合自体は存在するが、フォールバック名になる経路は無い（`exists?` が false の側は取得した表示名で作成、true の側は既存行の名前を維持。フォールバック名は Get profile 失敗時のみ）。実害は再送の並行到達時に Get profile が 1 回余分に走るだけで、`record_once` の unique 制約で業務処理は 1 回に収束する。判定を `record_once` の中へ移すと DB トランザクション中に外部 HTTP を呼ぶことになり仕様書 2.3（作成前に呼ぶ・短タイムアウト）に反するため現状維持。上記の「fallback 名になるだけ」という本記録の記述が不正確だったので訂正した (2) 「`LineBot` の `rescue StandardError` はタイプミス由来の `NoMethodError` も nil / false に丸める」は**正当**だが対応しない。SDK（line-bot-api 2.x の `HttpClient`）は自前で rescue せず `Net::OpenTimeout` / `Net::ReadTimeout` / `Errno::*` / `OpenSSL::SSL::SSLError` / `EOFError` / 200 応答の本文が JSON でない場合の `JSON::ParserError` 等をそのまま伝播させるため、列挙して絞ると想定外のクラスが 500 → 再送に化ける。仕様書 2.3「失敗時はフォールバック名で作成を続行」を優先し、warn ログに例外クラスを出して観測可能にする現行設計を維持。実装ミスは正常系の spec（`line_bot_spec` / request spec）で検出できる
+- [ ] 8.10 【確認・決定】OmniAuth のコールバック URL のホスト検証（CVE-2026-63183）
+  - 実施内容: omniauth 2.2.0（PR #94 で更新）の変更内容を公式の勧告（GHSA-m27g-v28p-f9fx）・変更履歴・ソースで確認し、Host ヘッダーインジェクションへの対策が**設定なしで有効か、`OmniAuth.config.full_host` / `allowed_hosts` の設定が必要か**を確定する。必要な場合は環境ごとの値の持ち方（development の localhost / ngrok、test、production）を決めて設定し、警告が出なくなることを確認する。`config/initializers/devise.rb` がリクエストのホストから `redirect_uri` を組み立てている箇所（`strategy.full_host + strategy.callback_path`）への影響も確認する。production のホスト名はホスティング未確定（仕様書 10 章 #1）のため、値の決定は環境変数等に逃がすか、確定時まで保留するかをここで決める
+  - テスト種別: 設定が必要な場合は request spec（許可していないホストでのログイン開始・コールバックが拒否されること）
+  - 完了条件: 対策が有効であることを根拠（公式情報またはソース）とともに記録し、設定が必要な場合は設定と spec が入っている。保留する部分があれば、理由と再開の条件を記録している
+  - 経緯（2026-11-18・ユーザー指示で追加）: 10.7 のテスト実行中に、omniauth が「コールバック URL をリクエストのホストから組み立てている。Host / X-Forwarded-Host は偽装できる。`full_host` か `allowed_hosts` を設定せよ」という警告を出していることに気づいた。PR #94 は bundler-audit の勧告を解消するための版の更新のみで、`full_host` も `allowed_hosts` も設定していない。**bundler-audit が通ることと、対策が有効であることは別**で、後者は未確認。LINE Login の `redirect_uri` は LINE Developers コンソールに登録した URL と一致しないと LINE 側で拒否されるため実害の範囲は限られる見込みだが、これも未確認（推測）
+  - 実施時期: 12.1 の実機 E2E 確認より前（ngrok のホストを許可する必要があるかどうかが 12.1 の手順に影響するため）
 
 ## 9. 記録入力の実装（F-03 / F-04）
 
@@ -700,6 +706,11 @@
     - TDD: `pending_workout_entry_spec`（`resolve_current!` の引数変更に合わせて 2 件を修正。`chosen: false` の旧 1 件と `current_unknown_bodyweight?` の 1 件は (1) の設計変更で対象メソッドが無くなったため、`resolve_current_as_new!` 2 件・`create_new_exercises!` 3 件に置き換え。`reissue!` 1 件を追加）・`exercise_alias_spec` +4（`replace_proposals!`）・`postback_handler_spec` +10（前の確認のボタン 2 / 新規登録後のキャンセル 3 / 別名の順次提示 5）・`spec/requests/line_sequential_confirmation_spec.rb`（3・新規）→ RED（23 件。未定義のメソッド・`next_alias` が無い・押した時点で種目が作られる・id が変わらない・前のボタンが 2 件目に適用される・はい の返信に次の確認が付かない）→ GREEN。request spec の 3 件目（確認を無視して次の記録を送ると残りは出ない）は 10.6 の実装で既に満たされており RED にならなかった（既存の振る舞いの固定）。REFACTOR: 判定なし（`with_alias_question` の共通化と `mark_current!` の切り出しは GREEN 中に実施）
     - 品質・セキュリティ: RSpec 全件 475 examples 0 failures・RuboCop 指摘なし・Brakeman 警告 0（Webhook 処理の変更のため実行）。依存の追加なし・スキーマ変更なし
     - 実物の LINE での確認は未実施（LINE API はモック）。12.1 で確かめる
+- [ ] 10.8 保留を作る前の検証（解決済みの行の保存エラーを先に返す）
+  - 実施内容: 未知の種目を含む記録メッセージで、完全一致で解決済みの行に保存時の検証エラーになる値がある場合（例: 重量必須のベンチプレスに `ベンチプレス/10`）、保留を作らず、候補も提示せずに、その場で保存エラー（`:invalid`・理由と入力方法の案内）を返信する。検証は既存のモデル検証（`WorkoutSet`）をそのまま使い、判定ロジックを二重に持たない（方式は着手時に決定。候補: 解決済みの行だけを保存して必ず巻き戻す試し保存）。未知の種目の行は、種目が決まるまで検証できないため対象外（候補に答えた後のエラーは従来どおり残る）
+  - テスト種別: model spec（`RecordMessageHandler`）・request spec
+  - 完了条件: 上記の入力で保留が作られず、候補提示ではなく保存エラーが返ること、何も保存されないこと、解決済みの行がすべて有効な場合は従来どおり保留と候補提示になることを spec で確認
+  - 経緯（2026-11-18・ユーザー指示で追加）: 10.6 の申し送り (2)。現状は `ベンチプレス/10` と未知種目 `ランジ20/10` を一緒に送ると、「ランジ」の候補確認に答えさせた後で「ベンチプレス: 重量を入力してください」と返る。種目が残る問題は PR #92 と 10.7 で解消済みだが、どう答えても保存できない入力に質問を重ねる流れが残っている。仕様書 4.2.3 は「未知の種目名を含む場合: 保存せず候補提案フローに移行する」とだけ定めており、検証エラーとの優先順位は書かれていないため、実装時に仕様書へ追記する（パース失敗 → 解決済みの行の検証エラー → 未知の種目、の順）
 
 ## 11. コマンドとリッチメニュー（仕様書 4.2.1 / 4.2.5）
 
