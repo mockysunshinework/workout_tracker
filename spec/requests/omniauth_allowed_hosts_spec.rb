@@ -104,6 +104,13 @@ RSpec.describe "LINE Login: コールバック URL のホスト検証", type: :r
         .to eq [ "app.example.jp", "tunnel.example.net", "Abc.ngrok-free.app" ]
     end
 
+    # PR #98 レビュー（2 回目）所見 2: ホスト名の取り出しが IPv6 リテラルを壊していた（`[::1]` → `[`）。
+    # request.host は IPv6 を角括弧付き（"[::1]"）で返すので、角括弧ごと残す
+    it "IPv6 リテラルは角括弧ごとホストとして扱う（ポート・スキーム・パスだけ取り除く）" do
+      expect(load_with(env: "production", allowed_hosts: "[::1], http://[2001:db8::1]:3000/path"))
+        .to eq [ "[::1]", "[2001:db8::1]" ]
+    end
+
     it "production で APP_ALLOWED_HOSTS が未設定なら、どのホストも許可しない（nil ＝ 検証なし、にはしない）" do
       expect(load_with(env: "production")).to eq []
     end
