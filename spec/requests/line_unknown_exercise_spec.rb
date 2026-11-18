@@ -71,6 +71,20 @@ RSpec.describe "LINE Webhook: 未知の種目と候補提示", type: :request do
     expect(message.quick_reply.items.map { |i| i.action.label }).to eq [ "新規種目として登録", "キャンセル" ]
   end
 
+  # 10.8: 完全一致した行が保存できない値なら、候補を出さずにその場で保存エラーを返す
+  it "未知の種目を含んでいても、解決済みの行が保存できない値なら、保留も候補提示もせず保存エラーを返信する" do
+    expect { post_event(text_event("ベンチプレス/10\nランジ20/10")) }
+      .to change(PendingWorkoutEntry, :count).by(0).and change(WorkoutSet, :count).by(0)
+
+    expect(response).to have_http_status(:ok)
+    message = replied_message
+    expect(message.text).to start_with("記録を保存できなかったため、保存していません。")
+    expect(message.text).to include("ベンチプレス: ")
+    expect(message.text).not_to include("一致する種目がありません")
+    expect(message.quick_reply).to be_nil
+    expect(ProcessedLineEvent.count).to eq 1
+  end
+
   it "保留中に別の記録メッセージが来たら既存の保留を破棄して新しい入力を優先する（後勝ち・id 再採番）" do
     post_event(text_event("ベンチ60/5", webhook_event_id: "01MESSAGE00000000000000003"))
     old = PendingWorkoutEntry.sole

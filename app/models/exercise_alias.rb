@@ -14,6 +14,30 @@ class ExerciseAlias < ApplicationRecord
 
   before_validation :assign_normalized_alias
 
+  # 候補選択で記録を保存した時点で、確認待ち（confirmed: false）の別名行を作る（SPEC 4.3.1(4)）。
+  # 同じ略称の確認待ち行は削除して作り直す（UPDATE ではなく id を採番し直し、古い [はい] ボタンを無効化する）。
+  # 同じ略称が確認済みなら何もせず nil を返す（確認済みの別名の付け替え・解除は Stage 1 では行わない）
+  def self.propose!(user:, alias_name:, exercise:)
+    same_alias = where(user: user, normalized_alias: ExerciseNameNormalizer.call(alias_name))
+    return nil if same_alias.confirmed.exists?
+
+    transaction do
+      same_alias.delete_all
+      create!(user: user, exercise: exercise, alias: alias_name)
+    end
+  end
+
+  # 一括保存の時点で、候補から選んだ種目の確認待ち行をまとめて作る（SPEC 4.3.1(4)・10.7）。
+  # proposals は [略称, 種目] の配列。作った行を渡した順（＝ id 順）で返す。
+  # 先に利用者の確認待ち行をすべて削除する: 確認待ちとして残るのは「直近の保存の分」だけにして、
+  # 無視された以前の確認（無視 ＝ いいえ）が、後の はい／いいえ の返信で蒸し返されないようにする
+  def self.replace_proposals!(user:, proposals:)
+    transaction do
+      where(user: user, confirmed: false).delete_all
+      proposals.filter_map { |alias_name, exercise| propose!(user: user, alias_name: alias_name, exercise: exercise) }
+    end
+  end
+
   private
 
   # 表記は入力どおり保持し、照合用の名前だけを種目名と同じ規則で正規化する

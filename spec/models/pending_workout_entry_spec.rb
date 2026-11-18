@@ -75,4 +75,143 @@ RSpec.describe PendingWorkoutEntry, type: :model do
       expect(build(:pending_workout_entry, expires_at: 1.minute.from_now)).not_to be_expired
     end
   end
+
+  # 10.6 postback（候補選択・新規登録）での確定と、全行確定後の保存用データ
+  describe "#resolve_current!" do
+    let(:bench) { create(:exercise, :preset, name: "ベンチプレス") }
+
+    it "確認中の未知種目の行に種目 id を入れて保存し、次の未知種目が確認対象になる" do
+      entry = create(:pending_workout_entry, user: user, parsed_lines: lines)
+
+      entry.resolve_current!(bench)
+
+      entry.reload
+      expect(entry.parsed_lines[1]).to include("exercise_id" => bench.id, "chosen" => true)
+      expect(entry.current_unknown["exercise_name"]).to eq "DL"
+    end
+
+    it "同じ種目名（表記ゆれを含む）の未解決行はまとめて確定する" do
+      same_name = lines + [ lines[1].merge("line_number" => 4, "exercise_name" => "べんち") ]
+      entry = create(:pending_workout_entry, user: user, parsed_lines: same_name)
+
+      entry.resolve_current!(bench)
+
+      expect(entry.reload.parsed_lines.map { |l| l["exercise_id"] }).to eq [ 1, bench.id, nil, bench.id ]
+    end
+  end
+
+  # 10.7 新規登録は「登録する」と決めたことだけを保留に記録し、種目は一括保存の時点で作る
+  # （途中キャンセルで何も残さないため）
+  describe "#resolve_current_as_new!" do
+    it "種目は作らず、確認中の行に新規登録の印（chosen: false）を付けて、次の未知種目へ進む" do
+      entry = create(:pending_workout_entry, user: user, parsed_lines: lines)
+
+      expect { entry.resolve_current_as_new! }.not_to change(Exercise, :count)
+
+      entry.reload
+      expect(entry.parsed_lines[1]).to include("exercise_id" => nil, "chosen" => false)
+      expect(entry.current_unknown["exercise_name"]).to eq "DL"
+    end
+
+    it "全行が確定（選択または新規登録）していれば current_unknown は nil" do
+      entry = create(:pending_workout_entry, user: user, parsed_lines: lines.last(1))
+
+      entry.resolve_current_as_new!
+
+      expect(entry.reload.current_unknown).to be_nil
+    end
+  end
+
+  describe "#create_new_exercises!" do
+    it "新規登録の印が付いた種目名ごとに独自種目を作り、行に種目 id を入れる" do
+      entry = create(:pending_workout_entry, user: user, parsed_lines: lines)
+      entry.resolve_current_as_new! # ベンチ（重量あり）
+      entry.resolve_current_as_new! # DL（自重）
+
+      expect { entry.create_new_exercises! }.to change { user.exercises.count }.by(2)
+
+      bench_like = user.exercises.find_by!(name: "ベンチ")
+      deadlift_like = user.exercises.find_by!(name: "DL")
+      expect(entry.reload.parsed_lines.map { |l| l["exercise_id"] }).to eq [ 1, bench_like.id, deadlift_like.id ]
+    end
+
+    it "自重（重量なし）のグループがある種目名は重量を省略できる種目として、無ければ重量必須で作る" do
+      entry = create(:pending_workout_entry, user: user, parsed_lines: lines)
+      2.times { entry.resolve_current_as_new! }
+
+      entry.create_new_exercises!
+
+      expect(user.exercises.find_by!(name: "ベンチ").bodyweight).to be false
+      expect(user.exercises.find_by!(name: "DL").bodyweight).to be true
+    end
+
+    it "同じ種目名（表記ゆれを含む）の行は 1 つの種目にまとめる" do
+      same_name = lines.first(2) + [ lines[1].merge("line_number" => 3, "exercise_name" => "べんち") ]
+      entry = create(:pending_workout_entry, user: user, parsed_lines: same_name)
+      entry.resolve_current_as_new!
+
+      expect { entry.create_new_exercises! }.to change { user.exercises.count }.by(1)
+
+      ids = entry.reload.parsed_lines.last(2).map { |l| l["exercise_id"] }
+      expect(ids.uniq).to eq [ user.exercises.sole.id ]
+    end
+  end
+
+  # 10.7 順次確認で次の未知種目へ進むたびに id を振り直し、前の確認のボタンを無効にする
+  describe "#reissue!" do
+    it "同じ内容・同じ受付時刻・同じ期限のまま、新しい id の行に作り直す" do
+      entry = travel_to(10.minutes.ago) { create(:pending_workout_entry, user: user, parsed_lines: lines) }
+
+      reissued = entry.reissue!
+
+      expect(reissued.id).not_to eq entry.id
+      expect(described_class.exists?(entry.id)).to be false
+      expect(described_class.where(user: user).sole).to eq reissued
+      expect(reissued).to have_attributes(source_text: entry.source_text, parsed_lines: entry.parsed_lines,
+                                          created_at: entry.created_at, expires_at: entry.expires_at)
+    end
+  end
+
+  describe "#resolved_entries" do
+    let(:bench) { create(:exercise, :preset, name: "ベンチプレス") }
+    let(:mine) { create(:exercise, user: user, name: "DL") }
+    let(:resolved_lines) do
+      [ lines[0].merge("exercise_id" => bench.id), lines[1].merge("exercise_id" => bench.id), lines[2].merge("exercise_id" => mine.id) ]
+    end
+
+    it "行ごとに [種目, パース結果と同じ形の Entry] を返す（重量は BigDecimal・自重は nil）" do
+      entries = build(:pending_workout_entry, user: user, parsed_lines: resolved_lines).resolved_entries
+
+      expect(entries.map(&:first)).to eq [ bench, bench, mine ]
+      expect(entries.map { |_, e| e.exercise_name }).to eq %w[ベンチプレス ベンチ DL]
+      expect(entries.map { |_, e| e.groups.map { |g| [ g.weight_kg, g.reps, g.sets ] } })
+        .to eq [ [ [ BigDecimal("60"), 5, 3 ] ], [ [ BigDecimal("70"), 3, 1 ] ], [ [ nil, 10, 1 ] ] ]
+    end
+
+    it "保留中に種目が削除されていた場合は nil" do
+      mine.destroy!
+
+      expect(build(:pending_workout_entry, user: user, parsed_lines: resolved_lines).resolved_entries).to be_nil
+    end
+
+    it "他ユーザーの独自種目の id が入っていても使わない（nil）" do
+      others = create(:exercise, name: "他人の種目")
+      tampered = [ lines[0].merge("exercise_id" => others.id) ]
+
+      expect(build(:pending_workout_entry, user: user, parsed_lines: tampered).resolved_entries).to be_nil
+    end
+  end
+
+  describe "#alias_candidates" do
+    it "候補選択で確定した行の [略称, 種目 id] を、正規化後の略称で重複なく返す" do
+      chosen = [
+        lines[0],
+        lines[1].merge("exercise_id" => 5, "chosen" => true),
+        lines[1].merge("line_number" => 3, "exercise_name" => "べんち", "exercise_id" => 5, "chosen" => true),
+        lines[2].merge("exercise_id" => 9, "chosen" => false)
+      ]
+
+      expect(build(:pending_workout_entry, parsed_lines: chosen).alias_candidates).to eq [ [ "ベンチ", 5 ] ]
+    end
+  end
 end
