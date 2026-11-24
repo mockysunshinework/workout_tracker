@@ -18,7 +18,11 @@ module LineMessages
     TEXT
   end
 
-  # 新規の友だち追加（SPEC 4.2.1 follow・新規）
+  # 「ヘルプ」コマンドの応答（SPEC 4.2.1・11.1）。記録フォーマットとコマンド一覧は input_guide がそのまま持つ
+  def help
+    input_guide
+  end
+
   # 保存内容のエコーバック（SPEC 4.2.3）。グループごとに「重量×回数×セット数」を個別に列挙し、
   # 合算や省略で打ち間違い（例: `懸垂/10 /3` のスペース）が見えなくならないようにする（9.1・2026-09-16 決定）
   def recorded(saved)
@@ -165,6 +169,7 @@ module LineMessages
     "#{weight_kg.to_s('F').delete_suffix('.0')}kg"
   end
 
+  # 新規の友だち追加（SPEC 4.2.1 follow・新規）
   def welcome
     "友だち追加ありがとうございます！\nトレーニングの記録をこのトークに送るだけで保存できます。\n\n#{input_guide}"
   end

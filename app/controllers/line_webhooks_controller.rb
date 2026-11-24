@@ -47,7 +47,7 @@ class LineWebhooksController < ApplicationController
     end
   end
 
-  # SPEC 4.2.1 message（テキスト）: 記録フォーマットなら保存してエコーバック（9.4）、
+  # SPEC 4.2.1 message（テキスト）: コマンドならその応答（11 章）、記録フォーマットなら保存してエコーバック（9.4）、
   # 失敗や記録の形でないテキストは案内を返信（9.5）、未知の種目を含むなら全行を保留して候補を
   # Quick Reply で提示（10.5）。記録日は受信日（JST。Date.current はアプリのタイムゾーン = Tokyo）。
   # テキスト以外のメッセージは冪等 ID だけ記録して受領する
@@ -61,16 +61,23 @@ class LineWebhooksController < ApplicationController
     # 並行作成の unique 制約違反をトランザクション内で起こすと以降の SQL が失敗するため
     user = User.find_or_create_from_line!(line_user_id: event.source.user_id, display_name: nil)
 
-    outcome = nil
+    text = buttons = nil
     # このWebhookイベントをまだ処理していなければ、ブロックの中を実行する
     # 処理済みの場合はこのブロックは実行されない
     ProcessedLineEvent.record_once(event.webhook_event_id) do
-      outcome = RecordMessageHandler.call(user: user, text: event.message.text, performed_on: Date.current)
+      text, buttons = message_reply(user, event.message.text)
     end
-    return unless outcome
 
-    text, buttons = reply_for(outcome)
     LineBot.reply(event.reply_token, text, buttons: buttons) if text
+  end
+
+  # テキスト → [返信文, Quick Reply のボタン]。コマンド（SPEC 4.2.1・11 章）を先に判定し、
+  # 一致しなければ記録として処理する
+  def message_reply(user, text)
+    case LineCommand.match(text)
+    when :help then [ LineMessages.help, [] ]
+    else reply_for(RecordMessageHandler.call(user: user, text: text, performed_on: Date.current))
+    end
   end
 
   # SPEC 4.2.1 postback（Quick Reply のボタン選択）: 保留中の入力の確定・新規登録・キャンセルと、
