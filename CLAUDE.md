@@ -20,7 +20,7 @@
 
 | 領域 | 採用 |
 |---|---|
-| 言語・フレームワーク | Ruby 3.3.10 / Rails 8.1 |
+| 言語・フレームワーク | Ruby 3.3.14 / Rails 8.1 |
 | データベース | PostgreSQL 17（開発環境は `compose.yaml` の Docker コンテナ） |
 | 認証 | LINE Login（OpenID Connect・`omniauth_openid_connect`）＋ Devise（`omniauthable` / `rememberable` のセッション管理のみ。メール＋パスワード認証は不採用） |
 | フロントエンド | Propshaft / importmap-rails / Turbo / Stimulus（Hotwire 既定構成） |
